@@ -1,0 +1,14 @@
+{
+	"authors": [
+		"Dmitry Olshansky"
+	],
+	"copyright": "Copyright © 2024, Dmitry Olshansky",
+	"dependencies": {
+		"photon": { "path": "../.." },
+		"photon-http" : "~>0.4.5",
+		"dpq2" : "~>1.1.7"
+	},
+	"description": "An example app using pool API",
+	"license": "BOOST",
+	"name": "todo"
+}
