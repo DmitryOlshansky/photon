@@ -283,14 +283,15 @@ class FiberExt : Fiber {
     int wakeUpObject;
 
     enum PAGESIZE = 4096;
+    enum STACK_PAGES = 64;
     
     this(void function() fn, uint numSched) nothrow {
-        super(fn);
+        super(fn, STACK_PAGES * PAGESIZE);
         numScheduler = numSched;
     }
 
     this(void delegate() dg, uint numSched) nothrow {
-        super(dg);
+        super(dg, STACK_PAGES * PAGESIZE);
         numScheduler = numSched;
     }
 
