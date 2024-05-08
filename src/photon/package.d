@@ -286,6 +286,7 @@ private:
 struct Pooled(T) {
     alias get this;
     @property ref get() const { return pointer.item; }
+    @property ref get() { return pointer.item; }
     private PooledEntry!T* pointer;
 }
 
