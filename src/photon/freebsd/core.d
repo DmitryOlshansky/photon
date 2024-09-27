@@ -408,7 +408,7 @@ public void startloop()
     kq = kqueue();
     enforce(kq != -1);
     
-    eventLoop = pthread_create(cast(pthread_t*)&eventLoop, null, &processEventsEntry, null);
+    checked(pthread_create(cast(pthread_t*)&eventLoop, null, &processEventsEntry, null), "failed to start event loop");
 }
 
 package(photon) void stoploop()
