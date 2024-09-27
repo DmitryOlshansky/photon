@@ -1,0 +1,16 @@
+{
+	"fileVersion": 1,
+	"versions": {
+		"derelict-pq": "4.0.0",
+		"derelict-util": "3.0.0-beta.2",
+		"dpq2": "1.1.7",
+		"money": "3.0.2",
+		"photon": {"path":"../../.."},
+		"photon-http": "0.4.5",
+		"sharded-map": "2.7.0",
+		"stdx-allocator": "2.77.5",
+		"vibe-container": "1.3.1",
+		"vibe-d": "0.10.0",
+		"vibe-serialization": "1.0.4"
+	}
+}

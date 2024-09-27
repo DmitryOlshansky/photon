@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Todo list app</title>
+        <script src="https://ajax.aspnetcdn.com/ajax/jQuery/jquery-3.7.1.min.js"></script>
+    </head>
+    <style>
+        body {
+            display: flex;
+            background: grey;
+        }
+        .container {
+            background: white;
+            width: 500px;
+            margin-left: auto;
+            margin-right: auto;
+            padding: 40px;
+            border-radius: 45px;
+        }
+        .delete {
+            color: red;
+            display: inline;
+        }
+    </style>
+    <body>
+        <div class="container">
+            <h1>TODO list app</h1>
+            <section>
+            <ul id="list">
+                
+            </ul>
+            <div>
+                <input id="new-msg" type="text" onsubmit="addItem()"/>
+                <button id="new-button" onclick="addItem()">ADD</button>
+            </div>
+            </section>
+        </div>
+    </body>
+    <script>
+        $(document).ready(async function() {
+            let initial = await $.ajax("/list", {
+                method: 'POST',
+            });
+            console.log(initial);
+            initial.forEach(item => {
+                let el = $(`<li data-id=${item.id}>${item.text} <button class="delete">X</button></li>`)
+                $('#list').append(el)
+            });
+        })
+        function addItem() {
+            $.ajax("/add", {
+                method: 'POST',
+                data: JSON.stringify({ msg: $('#new-msg').text }),
+                contentType: 'application/json'
+            })
+            $("#new-msg").text = "";
+        }
+    </script>
+</html>
