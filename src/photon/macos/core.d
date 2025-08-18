@@ -819,8 +819,22 @@ ssize_t universalSyscall(size_t ident, string name, SyscallKind kind, Fcntl fcnt
         shared(Descriptor)* descriptor = descriptors.ptr + fd;
         if (atomicLoad(descriptor.state) == DescriptorState.THREADPOOL) {
             logf("%s syscall THREADPOLL FD=%d", name, fd);
-            //TODO: offload syscall to thread-pool
-            return __syscall(ident, fd, args);
+            auto result = offload(() {
+                auto ret = __syscall(ident, fd, args);
+                if (ret < 0) {
+                    return -errno;
+                }
+                else {
+                    return ret;
+                }
+            });
+            if (result < 0) {
+                errno = cast(int)-result;
+                return -1;
+            }
+            else {
+                return result;
+            }
         }
     L_start:
         shared AwaitingFiber await = AwaitingFiber(cast(shared)currentFiber, null);
