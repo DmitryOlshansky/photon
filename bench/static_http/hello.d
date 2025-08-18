@@ -4,13 +4,14 @@
         "name" : "hello",
         "dependencies": {
             "photon": { "path" : "../.." },
-            "photon-http": "0.5.5"
+            "photon-http": "0.5.4",
+            "symgc" : { "path" : "/home/dolshansky/exp/symgc" }
         }
     }
 +/
 import std.stdio;
 import std.socket;
-
+import symgc.gcobj;
 import photon, photon.http;
 
 class HelloWorldProcessor : HttpProcessor {

@@ -1,0 +1,33 @@
+_D1d2gc5rtree__T5RTreeTSQwQw4emap14PageDescriptorZQBi5nodesMOFNaNbNcNdNiNfZOG262144SQDeQDfQDf__TQDcTQCzZQDk4Node (this=<error reading variable: Cannot access memory at address 0x0>)
+    at ../../../symgc/source/d/gc/rtree.d:44
+44                      return *_nodeStorage;
+Missing separate debuginfos, use: dnf debuginfo-install libgcc-12.3.1-62.oe2403sp1.aarch64
+(gdb) bt
+#0  _D1d2gc5rtree__T5RTreeTSQwQw4emap14PageDescriptorZQBi5nodesMOFNaNbNcNdNiNfZOG262144SQDeQDfQDf__TQDcTQCzZQDk4Node (this=<error reading variable: Cannot access memory at address 0x0>)
+    at ../../../symgc/source/d/gc/rtree.d:44
+#1  0x0000000000446078 in _D1d2gc5rtree__T5RTreeTSQwQw4emap14PageDescriptorZQBi__T13getLeavesImplVbi0ZQuMOFKSQDdQDeQDe__T10RTreeCacheTQDhZQrPvPOSQEnQEo4base4BaseZPOG262144SQFoQFpQFp__TQFmTQFjZQFu4Leaf
+    (this=<error reading variable: Cannot access memory at address 0x0>, cache=..., address=0x0, base=0x0) at ../../../symgc/source/d/gc/rtree.d:235
+#2  0x0000000000445a4c in _D1d2gc5rtree__T5RTreeTSQwQw4emap14PageDescriptorZQBi9getLeavesMOFKSQCoQCpQCp__T10RTreeCacheTQCsZQrPvZPOG262144SQEgQEhQEh__TQEeTQEbZQEm4Leaf (
+    this=<error reading variable: Cannot access memory at address 0x0>, cache=..., address=0x0) at ../../../symgc/source/d/gc/rtree.d:214
+#3  0x0000000000445998 in _D1d2gc5rtree__T5RTreeTSQwQw4emap14PageDescriptorZQBi3getMOFKSQCiQCjQCj__T10RTreeCacheTQCmZQrPvZPOSQDtQDuQDu__TQDrTQDoZQDz4Leaf (
+    this=<error reading variable: Cannot access memory at address 0x0>, cache=..., address=0x0) at ../../../symgc/source/d/gc/rtree.d:82
+#4  0x000000000044081c in _D1d2gc4emap9ExtentMap6lookupMOFKSQBgQBh5rtree__T10RTreeCacheTSQCjQCkQCk14PageDescriptorZQBoPvZQBh (this=<error reading variable: Cannot access memory at address 0x0>, 
+    cache=..., address=0x0) at ../../../symgc/source/d/gc/emap.d:22
+#5  0x0000000000440c68 in _D1d2gc4emap15CachedExtentMap6lookupMFPvZSQBoQBpQBp14PageDescriptor (this=<error reading variable: Cannot access memory at address 0x0>, address=0x0)
+    at ../../../symgc/source/d/gc/emap.d:101
+#6  0x000000000044d290 in _D1d2gc6tcache11ThreadCache22maybeGetPageDescriptorMFxPvZSQCeQCf4emap14PageDescriptor (this=0x0, ptr=0x0) at ../../../symgc/source/d/gc/tcache.d:906
+#7  0x000000000044d340 in _D1d2gc6tcache11ThreadCache18getAllocationSliceMFxPvZAv (this=<error reading variable: Cannot access memory at address 0x0>, ptr=0x0)
+    at ../../../symgc/source/d/gc/tcache.d:726
+#8  0x000000000043ee10 in __sd_gc_hook_get_allocation_slice (ptr=0x0) at ../../../symgc/source/symgc/gcobj.d:559
+#9  0x000000000043edcc in _D5symgc5gcobj8SnazzyGC12getArrayUsedMFNbNiPvbZAv (this=0x531590 <classref>, ptr=0x0, atomic=false) at ../../../symgc/source/symgc/gcobj.d:404
+--Type <RET> for more, q to quit, c to continue without paging--
+#10 0x000000000049eb14 in _d_arrayshrinkfit ()
+#11 0x0000000000425408 in _D6object__T16assumeSafeAppendTS6photon4http11http_parser10HttpHeaderZQCgFNbNcKNgASQBzQBvQBtQBjZNgQr (arr=...) at /home/dolshansky/ldc2/bin/../import/object.d:4084
+#12 0x00000000004253bc in _D6photon4http11http_parser6Parser5resetMFZv (this=0xfffee4000cd0) at ../../../../.dub/packages/photon-http/0.5.4/photon-http/source/photon/http/http_parser.d:103
+#13 0x0000000000425430 in _D6photon4http11http_parser6Parser5parseMFKSQBqQBmQBk11HttpRequestZi (this=<error reading variable: Cannot access memory at address 0x0>, req=...)
+    at ../../../../.dub/packages/photon-http/0.5.4/photon-http/source/photon/http/http_parser.d:111
+#14 0x0000000000424184 in _D6photon4http11http_server13HttpProcessor3runMFZv (this=0xfffff7ff1f80) at ../../../../.dub/packages/photon-http/0.5.4/photon-http/source/photon/http/http_server.d:72
+#15 0x0000000000403ee8 in _D5hello13server_workerFC3std6socket6SocketZv (client=0xffff76e00040) at hello.d:30
+#16 0x00000000004042cc in _D5hello6serverFZ13processClientMFC3std6socket6SocketZ16__lambda_L46_C12MFZv () at hello.d:46
+#17 0x00000000004955c4 in fiber_entryPoint ()
+#18 0x00000000004a4518 in fiber_trampoline ()
