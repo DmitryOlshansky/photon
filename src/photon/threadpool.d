@@ -14,10 +14,17 @@ else version(WatchOS) version = Darwin;
 else version(VisionOS) version = Darwin;
 
 // TODO: time to factor out common parts of schedulers?
+<<<<<<< HEAD
 version(linux) public import photon.linux.core;
 else version(FreeBSD) public import photon.freebsd.core;
 else version(Darwin) public import photon.macos.core;
 else version(Windows) public import photon.windows.core;
+=======
+version(linux) import photon.linux.core;
+else version(FreeBSD) import photon.freebsd.core;
+else version(OSX) import photon.macos.core;
+else version(Windows) import photon.windows.core;
+>>>>>>> 014bb01 (Starting to improve vibe.d compatibility)
 
 
 alias Work = void delegate();
@@ -53,15 +60,17 @@ static assert (WorkQueue.sizeof == 64);
 __gshared WorkQueue[] queues;
 shared bool workQueueTerminated = false;
 
-void initWorkQueues(size_t threads) {
+void initWorkQueues(size_t threads) nothrow {
     queues = new WorkQueue[threads];
     foreach (ref q; queues) {
         q.runq = IntrusiveQueue!(WorkItem, RawEvent)(RawEvent(0));
     }
-    void run(size_t n) {
-        auto t = new Thread(() => processWorkQueue(n));
-        t.isDaemon = true;
-        t.start();
+    void run(size_t n) nothrow {
+        try {
+            auto t = new Thread(() => processWorkQueue(n));
+            t.isDaemon = true;
+            t.start();
+        } catch(Exception) {}
     }
     foreach (i; 0..threads) {
         run(i);

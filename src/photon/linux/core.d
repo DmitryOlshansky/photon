@@ -10,6 +10,7 @@ import std.conv;
 import std.array;
 import std.meta;
 import std.random;
+import std.concurrency;
 import core.thread;
 import core.internal.spinlock;
 import core.sys.posix.sys.types;
@@ -36,6 +37,7 @@ import photon.linux.syscalls;
 import photon.ds.common;
 import photon.ds.intrusive_queue;
 import photon.threadpool;
+import photon.task;
 
 immutable size_t pageSize;
 
@@ -81,7 +83,7 @@ nothrow:
 
 ///
 public struct Event {
-nothrow:
+nothrow @trusted:
     private int evfd;
 
     this(bool signaled) {
@@ -123,6 +125,15 @@ nothrow:
     void trigger() shared {
         this.unshared.trigger();
     }
+
+    /// Free this event
+    void dispose() {
+        close(evfd);
+    }
+
+    void dispose() shared {
+        this.unshared.dispose();
+    }
 }
 
 ///
@@ -132,7 +143,7 @@ public auto event(bool triggered) {
 
 ///
 public struct Semaphore {
-nothrow:
+nothrow @trusted:
     private int evfd;
     ///
     this(int count) {
@@ -285,6 +296,9 @@ class FiberExt : Fiber {
     FiberExt next;
     uint numScheduler;
     int wakeFd; // recieves fd that woken us up
+    ThreadInfo tidInfo;
+    SpinLock joinLock;
+    FiberExt joiners;
     
     this(void function() fn, uint numSched) nothrow {
         super(fn);
@@ -302,6 +316,29 @@ class FiberExt : Fiber {
         if (from != numScheduler) {
             scheds[numScheduler].queue.event.trigger();
         }
+    }
+
+    void join() nothrow {
+        bool suspend = false;
+        joinLock.lock();
+        if (state != Fiber.State.TERM) {
+            currentFiber.next = joiners;
+            joiners = currentFiber;
+            suspend = true;
+        }
+        joinLock.unlock();
+        if (suspend) yield();
+    }
+
+    void wakeUpJoiners(size_t numSched) {
+        joinLock.lock();
+        FiberExt f = joiners;
+        while (f) {
+            FiberExt next = f.next;
+            f.schedule(numSched);
+            f = next;
+        }
+        joinLock.unlock();
     }
 }
 
@@ -329,7 +366,7 @@ nothrow void freeSleepTimer(Timer tm) {
 }
 
 /// Delay fiber execution by `req` duration.
-public nothrow void delay(T)(T req)
+public nothrow void delay(T)(T req) @trusted
 if (is(T : const timespec*) || is(T : Duration)) {
     auto tm = getSleepTimer();
     tm.wait(req);
@@ -353,7 +390,7 @@ static assert(isAwaitable!(Event*));
 static assert(isAwaitable!(shared(Event)*));
 
 ///
-public size_t awaitAny(Awaitable...)(auto ref Awaitable args) 
+public ssize_t awaitAny(Awaitable...)(auto ref Awaitable args, int timeout = -1) 
 if (allSatisfy!(isAwaitable, Awaitable)) {
     pollfd* fds = cast(pollfd*)calloc(args.length, pollfd.sizeof);
     scope(exit) free(fds);
@@ -363,7 +400,7 @@ if (allSatisfy!(isAwaitable, Awaitable)) {
     }
     ssize_t resp;
     do {
-        resp = poll(fds, args.length, -1); 
+        resp = poll(fds, args.length, timeout); 
     } while (resp < 0 && errno == EINTR);
     foreach (idx, ref fd; fds[0..args.length]) {
         if (fd.revents & POLL_IN) {
@@ -372,11 +409,11 @@ if (allSatisfy!(isAwaitable, Awaitable)) {
             return idx;
         }
     }
-    assert(0);
+    return -1;
 }
 
 ///
-public size_t awaitAny(Awaitable)(Awaitable[] args) 
+public ssize_t awaitAny(Awaitable)(Awaitable[] args, int timeout = -1) 
 if (allSatisfy!(isAwaitable, Awaitable)) {
     pollfd* fds = cast(pollfd*)calloc(args.length, pollfd.sizeof);
     scope(exit) free(fds);
@@ -395,7 +432,7 @@ if (allSatisfy!(isAwaitable, Awaitable)) {
             return idx;
         }
     }
-    assert(0);
+    return -1;
 }
 
 struct SchedulerBlock {
@@ -436,6 +473,7 @@ package(photon) void schedulerEntry(size_t n)
                 if (alive == 0) termination.trigger();
             }
             if (f.state == FiberExt.State.TERM) {
+                f.wakeUpJoiners(n);
                 logf("Fiber %s terminated", cast(void*)f);
                 atomicOp!"-="(alive, 1);
                 if (alive == 0) termination.trigger();
@@ -452,12 +490,12 @@ package(photon) void schedulerEntry(size_t n)
 }
 
 /// Convenience overload for functions
-public void go(void function() func) {
-    go({ func(); });
+public Task go(void function() func) @safe {
+    return go({ func(); });
 }
 
 /// Setup a fiber task to run on the Photon scheduler.
-public void go(void delegate() func) {
+public Task go(void delegate() func) @trusted {
     uint choice;
     if (scheds.length == 1) choice = 0;
     else {
@@ -475,16 +513,17 @@ public void go(void delegate() func) {
     logf("Assigned %x -> %d scheduler", cast(void*)f, choice);
     f.schedule(choice);
     scheds[choice].queue.event.trigger();
+    return Task(f);
 }
 
 /// Convenience overload for goOnSameThread that accepts functions 
-public void goOnSameThread(void function() func) {
-    goOnSameThread({ func(); });
+public Task goOnSameThread(void function() func) @safe {
+    return goOnSameThread({ func(); });
 }
 
 /// Same as go but make sure the fiber is scheduled on the same thread of the threadpool.
 /// Could be useful if there is a need to propagate TLS variable.
-public void goOnSameThread(void delegate() func) {
+public Task goOnSameThread(void delegate() func) @trusted {
     auto choice = currentFiber !is null ? currentFiber.numScheduler : 0;
     atomicOp!"+="(scheds[choice].assigned, 1);
     atomicOp!"+="(alive, 1);
@@ -492,6 +531,7 @@ public void goOnSameThread(void delegate() func) {
     logf("Assigned %x -> %d / %d scheduler", cast(void*)f, choice, scheds.length);
     f.schedule(choice);
     scheds[choice].queue.event.trigger();
+    return Task(f);
 }
 
 shared Descriptor[] descriptors;
@@ -615,7 +655,7 @@ void printStats()
     write(2, msg.ptr, msg.length);
 }
 
-public void startloop()
+public void startloop() nothrow @trusted
 {
     cpu_set_t cpus;
     size_t threads = 0;

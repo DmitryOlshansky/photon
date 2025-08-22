@@ -78,34 +78,35 @@ else version(FreeBSD) public import photon.freebsd.core;
 else static assert(false, "Target OS not supported by Photon yet!");
 
 public import photon.threadpool;
+public import photon.task;
 
 version(PhotonDocs) {
 
 /// Initialize event loop and internal data structures for Photon scheduler.
-public void startloop();
+public void startloop() nothrow @trusted;
 
 /// Setup a fiber task to run on the Photon scheduler.
-public void go(void delegate() func);
+public void go(void delegate() func)  @trusted;
 
 /// ditto
-public void go(void function() func);
+public void go(void function() func) @safe;
 
 /// Same as go but make sure the fiber is scheduled on the same thread of the threadpool.
 /// Could be useful if there is a need to propagate TLS variable. 
-public void goOnSameThread(void delegate() func);
+public void goOnSameThread(void delegate() func) @trusted;
 
 /// ditto
-public void goOnSameThread(void function() func);
+public void goOnSameThread(void function() func) @safe;
 
 /**
     Run work on a dedicated thread pool and pass the result back to the calling fiber or thread.
     This avoids blocking event loop on computationally intensive tasks.
 */
-T offload(T)(T delegate() work);
+T offload(T)(T delegate() work) @trusted;
 }
 
 /// Start sheduler and run fibers until all are terminated.
-void runFibers()
+void runFibers() @trusted
 {
     Thread runThread(size_t n){ // damned D lexical capture "semantics"
         auto t = new Thread(() => schedulerEntry(n));
@@ -127,6 +128,7 @@ void runFibers()
     `OutputRange` and `InputRange` concepts.
 +/
 struct Channel(T) {
+@trusted:
 private:
     shared RingQueue!(T, Event)* buf_;
     shared T item_;
@@ -220,7 +222,7 @@ public:
 /++
     Create a new shared `Channel` with given capacity.
 +/
-auto channel(T)(size_t capacity = 1) {
+auto channel(T)(size_t capacity = 1) @safe {
     return cast(shared)Channel!T(capacity);
 }
 
@@ -246,7 +248,7 @@ unittest {
     Multiplex between multiple channels, executes a lambda attached to the first
     channel that becomes ready to read.
 +/
-void select(Args...)(auto ref Args args)
+void select(Args...)(auto ref Args args) @trusted
 if (allSatisfy!(isChannel, Even!Args) && allSatisfy!(isHandler, Odd!Args)) {
     void delegate()[args.length/2] handlers = void;
     Event*[args.length/2] events = void;
@@ -454,6 +456,6 @@ private:
 
 
 /// Create generic pool for resources, open creates new resource, close releases the resource.
-auto pool(T)(size_t size, Duration maxIdle, T delegate() open, void delegate(ref T) close) {
+auto pool(T)(size_t size, Duration maxIdle, T delegate() open, void delegate(ref T) close) @trusted {
     return cast(shared) new Pool!T(size, maxIdle, open, close);
 }
