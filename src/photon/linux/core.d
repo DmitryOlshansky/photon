@@ -865,7 +865,6 @@ ssize_t universalSyscall(size_t ident, string name, SyscallKind kind, Fcntl fcnt
         shared(Descriptor)* descriptor = descriptors.ptr + fd;
         if (atomicLoad(descriptor.state) == DescriptorState.THREADPOOL) {
             logf("%s syscall THREADPOLL FD=%d", name, fd);
-            //TODO: offload syscall to thread-pool
             auto result = offload(() {
                 auto ret = syscall(ident, fd, args);
                 if (ret < 0) {

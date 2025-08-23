@@ -15,6 +15,7 @@ import std.conv;
 import std.array;
 import std.meta;
 import std.random;
+import std.concurrency;
 
 import core.thread;
 import core.internal.spinlock;
@@ -172,7 +173,7 @@ nothrow:
 
     this(bool signaled) {
         int[2] fds;
-        pipe(fds).checked;
+        pipe(fds).checked("pipe creation for event");
         if (signaled) trigger();
         this.fds = fds;
     }
@@ -240,7 +241,7 @@ nothrow:
 
     this(int initial) {
         int[2] fds;
-        pipe(fds).checked;
+        pipe(fds).checked("pipe initilization for semaphore");
         if (initial > 0) {
             trigger(initial);
         }
@@ -339,8 +340,9 @@ class FiberExt : Fiber {
     FiberExt next;
     uint numScheduler;
     int wakeFd; // recieves fd that woken us up
-
-    enum PAGESIZE = 4096;
+    ThreadInfo tidInfo;
+    SpinLock joinLock;
+    FiberExt joiners;
     
     this(void function() fn, uint numSched) nothrow {
         super(fn);
@@ -358,6 +360,29 @@ class FiberExt : Fiber {
         if (nsched != numScheduler) {
             notifyEventloop(numScheduler);
         }
+    }
+
+    void join() nothrow {
+        bool suspend = false;
+        joinLock.lock();
+        if (state != Fiber.State.TERM) {
+            currentFiber.next = joiners;
+            joiners = currentFiber;
+            suspend = true;
+        }
+        joinLock.unlock();
+        if (suspend) yield();
+    }
+
+    void wakeUpJoiners(size_t numSched) {
+        joinLock.lock();
+        FiberExt f = joiners;
+        while (f) {
+            FiberExt next = f.next;
+            f.schedule(numSched);
+            f = next;
+        }
+        joinLock.unlock();
     }
 }
 
@@ -393,11 +418,6 @@ int getCurrentKqueue() nothrow {
 
 package(photon) void schedulerEntry(size_t n)
 {
-    int tid = gettid();
-    /*cpu_set_t mask;
-    CPU_SET(n, &mask);
-    sched_setaffinity(tid, mask.sizeof, &mask).checked("sched_setaffinity");
-    */
     shared SchedulerBlock* sched = scheds.ptr + n;
     void onTermination() {
         atomicOp!"-="(alive, 1);
@@ -421,6 +441,7 @@ package(photon) void schedulerEntry(size_t n)
                 onTermination();
             }
             if (f.state == FiberExt.State.TERM) {
+                f.wakeUpJoiners(n);
                 logf("Fiber %s terminated", cast(void*)f);
                 onTermination();
             }
@@ -797,7 +818,12 @@ void interceptFd(Fcntl needsFcntl)(int fd) nothrow {
         ke[0].filter = EVFILT_READ;
         ke[1].filter = EVFILT_WRITE;
         ke[1].flags = ke[0].flags = EV_ADD | EV_ENABLE | EV_CLEAR;
-        kevent(getCurrentKqueue, ke.ptr, 2, null, 0, null).checked;
+        int ret = kevent(getCurrentKqueue, ke.ptr, 2, null, 0, null);
+        if (ret < 0) {
+            descriptors[fd].state = DescriptorState.THREADPOOL;
+        } else {
+            descriptors[fd].state = DescriptorState.NONBLOCKING;
+        }
     }
 }
 
@@ -806,8 +832,8 @@ void deregisterFd(int fd) nothrow {
         auto descriptor = descriptors.ptr + fd;
         atomicStore(descriptor._writerState, WriterState.READY);
         atomicStore(descriptor._readerState, ReaderState.EMPTY);
-        descriptor.scheduleReaders(fd, currentFiber.numScheduler);
-        descriptor.scheduleWriters(fd, currentFiber.numScheduler);
+        descriptor.scheduleReaders(fd, currentFiber is null ? size_t.max : currentFiber.numScheduler);
+        descriptor.scheduleWriters(fd, currentFiber is null ? size_t.max : currentFiber.numScheduler);
         atomicStore(descriptor.state, DescriptorState.NOT_INITED);
     }
 }
@@ -825,7 +851,22 @@ ssize_t universalSyscall(size_t ident, string name, SyscallKind kind, Fcntl fcnt
         if (atomicLoad(descriptor.state) == DescriptorState.THREADPOOL) {
             logf("%s syscall THREADPOLL FD=%d", name, fd);
             //TODO: offload syscall to thread-pool
-            return __syscall(ident, fd, args);
+            auto result = offload(() {
+                auto ret = __syscall(ident, fd, args);
+                if (ret < 0) {
+                    return -errno;
+                }
+                else {
+                    return ret;
+                }
+            });
+            if (result < 0) {
+                errno = cast(int)-result;
+                return -1;
+            }
+            else {
+                return result;
+            }
         }
     L_start:
         shared AwaitingFiber await = AwaitingFiber(cast(shared)currentFiber, null);

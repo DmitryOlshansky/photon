@@ -283,7 +283,7 @@ if (allSatisfy!(isChannel, Even!Args) && allSatisfy!(isHandler, Odd!Args)) {
 /// Trait for testing if a type is Channel
 enum isChannel(T) = is(T == Channel!(V), V);
 
-enum isHandler(T) = is(T == void delegate());
+enum isHandler(T) = is(T : void delegate());
 
 private template Even(T...) {
     static assert(T.length % 2 == 0);

@@ -150,7 +150,7 @@ T offload(T)(T delegate() work) {
     }
 }
 
-T offload(T)(T delegate() nothrow work) nothrow{
+T offload(T)(T delegate() nothrow work) nothrow {
     if (currentFiber is null) return work();
     static if (!is(T == void)) {
         T result;
