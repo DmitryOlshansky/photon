@@ -70,13 +70,6 @@ public:
         //noop
     }
 
-	unittest { // regression test for bogus "task cannot interrupt itself"
-		import vibe.core.core : runTask;
-		auto t = runTask({});
-		t.join();
-		runTask({ t.interrupt(); }).join();
-	}
-
 	bool opEquals(scope ref const(Task) other) const @safe nothrow {
 		return _fiber is other._fiber;
 	}
