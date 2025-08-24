@@ -308,7 +308,7 @@ public nothrow auto semaphore(int initial) {
 }
 
 struct AwaitingFiber {
-    shared FiberExt fiber;
+    shared FiberExt* fiber;
     AwaitingFiber* next;
 
     void scheduleAll(int wakeFd, size_t nsched) nothrow
@@ -317,7 +317,7 @@ struct AwaitingFiber {
         FiberExt head;
         // first process all AwaitingFibers since they are on stack
         do {
-            auto fiber = steal(w.fiber);
+            auto fiber = steal(*w.fiber);
             if (fiber) {
                 fiber.unshared.next = head;
                 head = fiber.unshared;
@@ -869,7 +869,8 @@ ssize_t universalSyscall(size_t ident, string name, SyscallKind kind, Fcntl fcnt
             }
         }
     L_start:
-        shared AwaitingFiber await = AwaitingFiber(cast(shared)currentFiber, null);
+        FiberExt fiber = currentFiber;
+        shared AwaitingFiber await = AwaitingFiber(cast(shared)&fiber, null);
         // set flags argument if able to avoid direct fcntl calls
         static if (fcntlStyle != Fcntl.explicit)
         {
@@ -1101,7 +1102,6 @@ extern(C) private ssize_t poll(pollfd *fds, nfds_t nfds, int timeout)
         }
         if (nfds == 0) {
             if (timeout == 0) return 0;
-            shared AwaitingFiber aw = shared(AwaitingFiber)(cast(shared)currentFiber);
             Timer tm = timer();
             tm.arm(timeout.msecs);
             FiberExt.yield();
@@ -1117,7 +1117,8 @@ extern(C) private ssize_t poll(pollfd *fds, nfds_t nfds, int timeout)
         }
         ssize_t result = 0;
         if (nonBlockingCheck(result, timeout)) return result;
-        shared AwaitingFiber aw = shared(AwaitingFiber)(cast(shared)currentFiber);
+        FiberExt fiber = currentFiber;
+        shared AwaitingFiber aw = shared(AwaitingFiber)(cast(shared)&fiber);
         foreach (i; 0..nfds) {
             if (fds[i].events & POLLIN)
                 descriptors[fds[i].fd].enqueueReader(&aw);

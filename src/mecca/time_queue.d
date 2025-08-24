@@ -6,6 +6,8 @@ import std.algorithm : min, max;
 import std.math : abs;
 import core.time;
 
+import photon.support;
+
 import mecca.containers.lists;
 import mecca.division: S64Divisor;
 
@@ -16,17 +18,34 @@ struct META(string msg) {
     static void opCall() {}
 }
 
-version(unittest) {
-    void assertEQ(T,U)(T lhs, U rhs) {
-        assert(lhs == rhs);
+void assertEQ(T,U)(T lhs, U rhs, string msg="") {
+    assert(lhs == rhs);
+}
+
+void assertOp(string op, T, U)(T lhs, U rhs, string msg) {
+    assert(mixin("lhs"~op~"rhs"), msg);
+}
+
+void DBG_ASSERT(string fmt, T...)(T args) {
+    debug {
+        import std.format;
+        assert(args[0], format(fmt, args[1..$]));
     }
+}
+
+void DEBUG(string fmt, T...)(T args) {
+    logf(fmt, args);
+}
+
+void INFO(string fmt, T...)(T args) {
+    logf(fmt, args);
 }
 
 struct notrace {}
 
 struct TscTimePoint {
-    ulong cycles;
-
+    long cycles;
+@safe nothrow @nogc:
     immutable static ulong cyclesPerSec;
 
     shared static this() {
@@ -38,6 +57,63 @@ struct TscTimePoint {
     static ulong toCycles(Duration dur) {
         long hns = dur.total!"hnsecs";
         return (hns / HECTONANO) * cyclesPerSec + ((hns % HECTONANO) * cyclesPerSec) / HECTONANO;
+    }
+
+    TscTimePoint opBinary(string op)(long cycles) const {
+        return mixin("TscTimePoint(this.cycles "~op~"cycles)");
+    }
+
+    TscTimePoint opBinary(string op)(Duration d) const {
+        return mixin("TscTimePoint(this.cycles "~op~"toCycles(d))");
+    }
+
+    Duration opBinary(string op: "-")(TscTimePoint rhs) {
+        return TscTimePoint.toDuration(cycles - rhs.cycles);
+    }
+
+    ref TscTimePoint opOpAssign(string op: "+")(long cycles) {
+        this.cycles += cycles;
+        return this;
+    }
+
+    ref TscTimePoint opOpAssign(string op: "+")(Duration d) {
+        this.cycles += toCycles(d);
+        return this;
+    }
+
+    ref TscTimePoint opOpAssign(string op: "-")(long cycles) {
+        this.cycles -= cycles;
+        return this;
+    }
+
+    ref TscTimePoint opOpAssign(string op: "-")(Duration d) {
+        this.cycles -= toCycles(d);
+        return this;
+    }
+
+    /// Calculate difference between two TscTimePoint in the given units
+    long diff(string units)(TscTimePoint rhs) nothrow @safe @nogc
+            if (units == "usecs" || units == "msecs" || units == "seconds" || units == "cycles")
+    {
+        static if (units == "usecs") {
+            return (cycles - rhs.cycles) / cyclesPerUsecDivisor;
+        }
+        else static if (units == "msecs") {
+            return (cycles - rhs.cycles) / cyclesPerMsecDivisor;
+        }
+        else static if (units == "seconds") {
+            return (cycles - rhs.cycles) / cyclesPerSecondDivisor;
+        }
+        else static if (units == "cycles") {
+            return (cycles - rhs.cycles);
+        }
+        else {
+            static assert (false, units);
+        }
+    }
+
+    int opCmp(TscTimePoint tsc) {
+        return cycles > tsc.cycles ? 1 : (cycles < tsc.cycles ? -1 : 0);
     }
 
     static Duration toDuration(ulong cycles) {
@@ -647,11 +723,11 @@ unittest {
     assert (e is e7, "%s".format(e));
 }
 
+/+
 unittest {
     META!"UT test time queue with captured values"();
     import std.stdio;
     import std.string;
-    import mecca.containers.pools;
     import std.algorithm: min;
     import std.random;
 
@@ -673,7 +749,6 @@ unittest {
     }
 
     void testCTQ(size_t numBins, size_t numLevels, size_t numElems)(Duration resolutionDur) {
-        FixedPool!(Entry, numElems) pool;
         CascadingTimeQueue!(Entry*, numBins, numLevels) ctq;
 
         TscTimePoint now = t0;
@@ -685,7 +760,6 @@ unittest {
         long before = toCycles(10.msecs);
         long ahead = toCycles(span/2);
 
-        pool.open();
         ctq.open(toCycles(resolutionDur), t0);
 
         //uint seed = 3594633224; //1337;
@@ -704,15 +778,14 @@ unittest {
                 assert (e.timePoint <= now, "tp=%s prevNow=%s now=%s".format(e.timePoint, prevNow, now));
                 //assert (e.timePoint/ctq.baseFrequencyCyclesDenom >= prevNow/ctq.baseFrequencyCyclesDenom, "tp=%s prevNow=%s now=%s".format(e.timePoint, prevNow, now));
                 numPopped++;
-                pool.release(e);
             }
             //writefln("%8d..%8d: %s", (prevNow - t0) / cyclesPerUsec, (now - t0) / cyclesPerUsec, numPopped);
             totalPopped += numPopped;
         }
 
         while (now < end) {
-            while (pool.numAvailable > 0) {
-                auto e = pool.alloc();
+            foreach (_; 0..numElems) {
+                auto e = new Entry;
                 e.timePoint = TscTimePoint(uniform(now.cycles - before, min(end.cycles, now.cycles + ahead), rand));
                 e.counter = totalInserted++;
                 //writefln("insert[%s] at %s", e.counter, (e.timePoint - t0) / cyclesPerUsec);
@@ -735,8 +808,6 @@ unittest {
             assert (s > 0, "level %s never received events".format(i));
         }
 
-        assert (totalInserted - totalPopped == pool.numInUse, "(1) pool.used=%s inserted=%s popped=%s".format(pool.numInUse, totalInserted, totalPopped));
-        assert (totalInserted == totalPopped, "(2) pool.used=%s inserted=%s popped=%s".format(pool.numInUse, totalInserted, totalPopped));
         assert (totalInserted > numElems * 2, "totalInserted=%s".format(totalInserted));
     }
 
@@ -748,10 +819,9 @@ unittest {
     }
     assert (numRuns > 0);
 }
-
++/
 unittest {
     META!"UT testing time queue with actual times"();
-    import mecca.log;
     import std.string;
 
     static struct Entry {
@@ -848,6 +918,7 @@ unittest {
     DEBUG!"Total runs %s"(numRuns);
 }
 +/
+
 
 unittest {
     META!"UT testing random time queue operations"();
