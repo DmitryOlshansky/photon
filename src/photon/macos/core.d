@@ -43,6 +43,8 @@ import photon.ds.common;
 import photon.ds.intrusive_queue;
 import photon.threadpool;
 
+import mecca.time_queue;
+
 alias KEvent = kevent_t;
 enum SYS_READ = 3;
 enum SYS_WRITE = 4;
@@ -51,6 +53,7 @@ enum SYS_CONNECT = 98;
 enum SYS_SENDTO = 133;
 enum SYS_RECVFROM = 29;
 enum SYS_CLOSE = 6;
+enum SYS_NANOSLEEP = 334;
 enum SYS_GETTID = 286;
 enum SYS_POLL = 230;
 
@@ -101,71 +104,16 @@ nothrow:
     private int[2] fds;
 }
 
-shared size_t timerId;
-
-struct Timer {
-nothrow:
-    this(size_t id) {
-        this.id = id;
+public struct Timer {
+    void wait(Duration d) {
+        delay(d);
     }
-
-    ///
-    void wait(const timespec* ts) {
-        wait(ts.tv_sec.seconds + ts.tv_nsec.nsecs);
-    }
-
-    ///
-    void wait(Duration dur) {
-        arm(dur);
-        FiberExt.yield();
-    }
-
-    void arm(Duration dur) {
-        KEvent event;
-        event.ident = id;
-        event.filter = EVFILT_TIMER;
-        event.flags = EV_ADD | EV_ENABLE | EV_ONESHOT;
-        event.fflags = 0;
-        event.data = dur.total!"msecs";
-        event.udata = cast(void*)(cast(size_t)cast(void*)currentFiber | 0x1);
-        timespec timeout;
-        timeout.tv_nsec = 1000;
-        kevent(getCurrentKqueue, &event, 1, null, 0, &timeout).checked("arming the timer");
-    }
-
-    void disarm() {
-        KEvent event;
-        event.ident = id;
-        event.filter = EVFILT_TIMER;
-        event.flags = EV_DELETE;
-        event.fflags = 0;
-        timespec timeout;
-        timeout.tv_nsec = 1000;
-        kevent(getCurrentKqueue, &event, 1, null, 0, &timeout).checked("canceling the timer");
-    }
-
-    private void waitThread(const timespec* ts) {
-        auto dur = ts.tv_sec.seconds + ts.tv_nsec.nsecs;
-        KEvent event;
-        event.ident = id;
-        event.filter = EVFILT_TIMER;
-        event.flags = EV_ADD | EV_ENABLE | EV_ONESHOT;
-        event.fflags = 0;
-        event.data = dur.total!"msecs";
-        event.udata = cast(void*)(cast(size_t)mach_thread_self() << 1);
-        timespec timeout;
-        timeout.tv_nsec = 1000;
-        kevent(getCurrentKqueue, &event, 1, null, 0, &timeout).checked("arming the timer for a thread");
-    }
-
-    private size_t id;
 }
 
-/// Allocate a timer
-public nothrow auto timer() {
-    return Timer(atomicFetchAdd(timerId, 1));
+///
+public auto timer() {
+    return Timer();
 }
-
 
 public struct Event {
 nothrow:
@@ -396,8 +344,32 @@ struct SchedulerBlock {
     int padding;
 }
 static assert(SchedulerBlock.sizeof == 64);
+enum TIMER_NUM_BINS = 256;
+enum TIMER_NUM_LEVELS = 4;
 
-package(photon) shared SchedulerBlock[] scheds;
+struct TimedFiber {
+    shared FiberExt* fiber;
+    TscTimePoint timePoint;
+    timeQueue.OwnerAttrType _owner;
+    TimedFiber* _next, _prev;
+
+    void schedule(size_t numSched) {
+        auto f = cast()steal(*fiber);
+        f.schedule(numSched);
+    }
+}
+
+shared SchedulerBlock[] scheds;
+CascadingTimeQueue!(TimedFiber*, TIMER_NUM_BINS, TIMER_NUM_LEVELS, true) timeQueue; // thread-local
+
+TimedFiber timerEntry(FiberExt* fiber, Duration delay) nothrow {
+    return TimedFiber(cast(shared)fiber, TscTimePoint.hardNow() + delay);
+}
+
+TimedFiber timerEntry(FiberExt* fiber, const timespec* ts) nothrow {
+    return TimedFiber(cast(shared)fiber, TscTimePoint.hardNow() + ts.tv_sec * dur!"seconds"(1) + ts.tv_nsec * dur!"nsecs"(1));
+}
+
 
 enum int MAX_EVENTS = 500;
 enum int SIGNAL = 42;
@@ -427,7 +399,14 @@ package(photon) void schedulerEntry(size_t n)
             }
         }
     }
+    timeQueue.open(100.usecs);
     while (alive > 0) {
+        TscTimePoint t = TscTimePoint.hardNow();
+        for (;;) {
+            TimedFiber* f = timeQueue.pop(t);
+            if (f == null) break;
+            f.schedule(n);
+        }
         FiberExt f = sched.queue.drain();
         while (f) {
             auto next = f.next; //save next, it will be reused on scheduling
@@ -447,7 +426,7 @@ package(photon) void schedulerEntry(size_t n)
             }
             f = next;
         }
-        processEventsEntry(n);
+        processEventsEntry(n, timeQueue.timeTillNextEntry(t));
     }
 }
 
@@ -614,31 +593,13 @@ void printStats()
     write(2, msg.ptr, msg.length);
 }
 
-__gshared ssize_t function (const timespec* req, const timespec* rem) libcNanosleep;
-Timer[] timerPool; // thread-local pool of preallocated timers
-
-nothrow auto getSleepTimer() {
-    Timer tm;
-    if (timerPool.length == 0) {
-        tm = timer();
-    } else {
-        tm = timerPool[$-1];
-        timerPool.length = timerPool.length-1;
-    }
-    return tm;
-}
-
-nothrow void freeSleepTimer(Timer tm) {
-    timerPool.assumeSafeAppend();
-    timerPool ~= tm;
-}
-
 /// Delay fiber execution by `req` duration.
 public nothrow void delay(T)(T req)
 if (is(T : const timespec*) || is(T : Duration)) {
-    auto tm = getSleepTimer();
-    tm.wait(req);
-    freeSleepTimer(tm);
+    FiberExt fiber = currentFiber;
+    auto tm = timerEntry(&fiber, req);
+    timeQueue.insert(&tm);
+    FiberExt.yield();
 }
 
 template Unshared(T) {
@@ -719,11 +680,14 @@ public void startloop()
     initWorkQueues(threads);
 }
 
-void processEventsEntry(size_t n)
+void processEventsEntry(size_t n, Duration timeout)
 {
     KEvent[MAX_EVENTS] ke;
-    int cnt = kevent(scheds[n].kq, null, 0, ke.ptr, MAX_EVENTS, null);
-    enforce(cnt >= 0);
+    timespec ts;
+    ts.tv_sec = timeout.total!"seconds"();
+    ts.tv_nsec = (timeout - ts.tv_sec.seconds).total!"nsecs";
+    int cnt = kevent(scheds[n].kq, null, 0, ke.ptr, MAX_EVENTS, timeout == Duration.max ? null : &ts);
+    if (cnt < 0) return;
     for (int i = 0; i < cnt; i++) {
         auto fd = cast(int)ke[i].ident;
         auto filter = ke[i].filter;
@@ -778,19 +742,6 @@ void processEventsEntry(size_t n)
                     break;
             }
             logf("Awaits %x", cast(void*)descriptor.writeWaiters);
-        }
-        if (filter == EVFILT_TIMER) {
-            size_t udata = cast(size_t)ke[i].udata;
-            if (udata & 0x1) {
-                auto ptr = udata & ~1;
-                FiberExt fiber = *cast(FiberExt*)&ptr;
-                fiber.wakeFd = wokenUpByTimer;
-                fiber.schedule(n);
-            }
-            else {
-                auto thread = cast(thread_act_t)udata >> 1;
-                thread_resume(thread);
-            }
         }
         if (filter == EVFILT_USER) {
             logf("USER event %s", ke[i].ident);
@@ -1102,9 +1053,7 @@ extern(C) private ssize_t poll(pollfd *fds, nfds_t nfds, int timeout)
         }
         if (nfds == 0) {
             if (timeout == 0) return 0;
-            Timer tm = timer();
-            tm.arm(timeout.msecs);
-            FiberExt.yield();
+            delay(timeout.msecs);
             logf("Woke up after select %x. WakeFd=%d", cast(void*)currentFiber, currentFiber.wakeFd);
             return 0;
         }
@@ -1126,10 +1075,10 @@ extern(C) private ssize_t poll(pollfd *fds, nfds_t nfds, int timeout)
                 descriptors[fds[i].fd].enqueueWriter(&aw);
         }
         if (timeout > 0) {
-            Timer tm = timer();
-            tm.arm(timeout.msecs);
+            auto tm = timerEntry(&fiber, timeout.msecs);
+            timeQueue.insert(&tm);
             FiberExt.yield();
-            tm.disarm();
+            timeQueue.cancel(&tm);
         }
         else {
             FiberExt.yield();
@@ -1154,9 +1103,7 @@ extern(C) private ssize_t nanosleep(const timespec* req, const timespec* rem) {
         delay(req);
         return 0;
     } else {
-        auto timer = getSleepTimer();
-        timer.waitThread(req);
-        thread_suspend(mach_thread_self());
+        __syscall(SYS_NANOSLEEP, req, rem);
         return 0;
     }
 }

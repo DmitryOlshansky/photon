@@ -3,7 +3,6 @@
 		"Dmitry Olshansky"
 	],
 	"copyright": "Copyright © 2023, Dmitry Olshansky",
-	"debugVersions": ["photon"],
 	"description": "Photon - a transparent fiber scheduler",
 	"license": "BOOST",
 	"name": "photon",
