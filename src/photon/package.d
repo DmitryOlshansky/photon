@@ -65,9 +65,15 @@ import std.meta;
 
 import photon.ds.ring_queue;
 
+version(OSX) version = Darwin;
+else version(iOS) version = Darwin;
+else version(TVOS) version = Darwin;
+else version(WatchOS) version = Darwin;
+else version(VisionOS) version = Darwin;
+
 version(Windows) public import photon.windows.core;
 else version(linux) public import photon.linux.core;
-else version(OSX) public import photon.macos.core;
+else version(Darwin) public import photon.macos.core;
 else version(FreeBSD) public import photon.freebsd.core;
 else static assert(false, "Target OS not supported by Photon yet!");
 

@@ -7,10 +7,16 @@ import std.random;
 
 import photon.ds.intrusive_queue;
 
+version(OSX) version = Darwin;
+else version(iOS) version = Darwin;
+else version(TVOS) version = Darwin;
+else version(WatchOS) version = Darwin;
+else version(VisionOS) version = Darwin;
+
 // TODO: time to factor out common parts of schedulers?
 version(linux) public import photon.linux.core;
 else version(FreeBSD) public import photon.freebsd.core;
-else version(OSX) public import photon.macos.core;
+else version(Darwin) public import photon.macos.core;
 else version(Windows) public import photon.windows.core;
 
 

@@ -1,5 +1,10 @@
 module photon.macos.core;
-version(OSX):
+version(OSX) version = Darwin;
+else version(iOS) version = Darwin;
+else version(TVOS) version = Darwin;
+else version(WatchOS) version = Darwin;
+else version(VisionOS) version = Darwin;
+version(Darwin):
 package(photon):
 
 import std.stdio;
