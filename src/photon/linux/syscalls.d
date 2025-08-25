@@ -93,7 +93,7 @@ version (X86) {
         SYS_SENDTO = 0xce,
         SYS_RECVFROM = 0xcf,
         SYS_NANOSLEEP = 0x65;
-    
+
     extern(C) ssize_t syscall(size_t number, ...);
 }
 

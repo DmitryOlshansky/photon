@@ -31,7 +31,7 @@ long fromMetric(string num) {
     return mult * num.to!long;
 }
 
-int main(string[] argv) { 
+int main(string[] argv) {
     bool trace = false;
     getopt(argv,
         "v", &trace
@@ -62,8 +62,8 @@ int main(string[] argv) {
     writefln("time,concurrency,RPS(min),RPS(avg),RPS(max),errors(max),lat(75%%),lat(99%%)");
     for(long c = start; c <= stop; c += step) {
         c = c / step * step; // truncate to step
-        if (c < numThreads) c = numThreads;     
-        auto dt = Clock.currTime();   
+        if (c < numThreads) c = numThreads;
+        auto dt = Clock.currTime();
         double[] rps = new double[runs];
         double[] perc75 = new double[runs];
         double[] perc99 = new double[runs];
@@ -102,7 +102,7 @@ int main(string[] argv) {
             }
         }
         writefln("%s,%d,%f,%f,%f,%d,%f,%f",
-            dt.toISOExtString, c, reduce!(min)(rps), mean(rps), reduce!max(rps), 
+            dt.toISOExtString, c, reduce!(min)(rps), mean(rps), reduce!max(rps),
             reduce!max(errors), mean(perc75), mean(perc99));
         stdout.flush();
         Thread.sleep(100.msecs);

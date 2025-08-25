@@ -102,7 +102,7 @@ cpu_mask CPU_SET()(size_t cpu, cpu_set_t* cpusetp) pure
      return __CPU_SET_S(cpu, cpu_set_t.sizeof, cpusetp);
 }
 
-cpu_mask CPU_GET()(size_t cpu, cpu_set_t* cpusetp) pure 
+cpu_mask CPU_GET()(size_t cpu, cpu_set_t* cpusetp) pure
 {
     return __CPU_GET_S(cpu, cpu_set_t.sizeof, cpusetp);
 }

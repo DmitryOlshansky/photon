@@ -4,7 +4,7 @@ import core.sys.windows.core;
 import core.sys.windows.winsock2;
 import std.format;
 
-struct WSABUF 
+struct WSABUF
 {
     uint length;
     void* buf;
@@ -166,7 +166,7 @@ alias PTP_TIMER = TP_TIMER*;
 alias TP_WAIT_RESULT = DWORD;
 
 alias PTP_WORK_CALLBACK = extern(Windows) VOID function (PTP_CALLBACK_INSTANCE Instance, PVOID Context, PTP_WORK Work);
-alias PTP_WAIT_CALLBACK = extern(Windows) VOID function (PTP_CALLBACK_INSTANCE Instance, PVOID Context, PTP_WAIT  Wait, TP_WAIT_RESULT WaitResult);
+alias PTP_WAIT_CALLBACK = extern(Windows) VOID function (PTP_CALLBACK_INSTANCE Instance, PVOID Context, PTP_WAIT Wait, TP_WAIT_RESULT WaitResult);
 alias PTP_TIMER_CALLBACK = extern(Windows) VOID function(PTP_CALLBACK_INSTANCE Instance, PVOID Context, PTP_TIMER Timer);
 
 extern(Windows) PTP_WORK CreateThreadpoolWork(

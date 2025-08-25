@@ -57,8 +57,8 @@ nothrow:
         } while(r < 0 && errno == EINTR);
         r.checked("event reset");
     }
-    
-    void trigger() { 
+
+    void trigger() {
         union U {
             ulong cnt;
             ubyte[8] bytes;
@@ -75,7 +75,7 @@ nothrow:
     void close() {
         .close(fd);
     }
-    
+
     int fd;
 }
 
@@ -107,7 +107,7 @@ nothrow:
     }
 
     /// Trigger the event.
-    void trigger() { 
+    void trigger() {
         union U {
             ulong cnt;
             ubyte[8] bytes;
@@ -242,7 +242,7 @@ nothrow:
         disarm();
     }
 
-    void dispose() { 
+    void dispose() {
         close(timerfd).checked;
     }
 }
@@ -281,11 +281,11 @@ struct AwaitingFiber {
     }
 }
 
-class FiberExt : Fiber { 
+class FiberExt : Fiber {
     FiberExt next;
     uint numScheduler;
     int wakeFd; // recieves fd that woken us up
-    
+
     this(void function() fn, uint numSched) nothrow {
         super(fn);
         numScheduler = numSched;
@@ -305,7 +305,7 @@ class FiberExt : Fiber {
     }
 }
 
-FiberExt currentFiber; 
+FiberExt currentFiber;
 shared RawEvent termination; // termination event, triggered once last fiber exits
 shared pthread_t eventLoop; // event loop, runs outside of D runtime
 shared int alive; // count of non-terminated Fibers scheduled
@@ -346,14 +346,14 @@ template Unshared(T) {
     }
 }
 ///
-public enum isAwaitable(E) = is (Unshared!E : Event) || is (Unshared!E : Semaphore) 
+public enum isAwaitable(E) = is (Unshared!E : Event) || is (Unshared!E : Semaphore)
     || is(Unshared!E : Event*) || is(Unshared!E : Semaphore*);
 
 static assert(isAwaitable!(Event*));
 static assert(isAwaitable!(shared(Event)*));
 
 ///
-public size_t awaitAny(Awaitable...)(auto ref Awaitable args) 
+public size_t awaitAny(Awaitable...)(auto ref Awaitable args)
 if (allSatisfy!(isAwaitable, Awaitable)) {
     pollfd* fds = cast(pollfd*)calloc(args.length, pollfd.sizeof);
     scope(exit) free(fds);
@@ -363,7 +363,7 @@ if (allSatisfy!(isAwaitable, Awaitable)) {
     }
     ssize_t resp;
     do {
-        resp = poll(fds, args.length, -1); 
+        resp = poll(fds, args.length, -1);
     } while (resp < 0 && errno == EINTR);
     foreach (idx, ref fd; fds[0..args.length]) {
         if (fd.revents & POLL_IN) {
@@ -376,7 +376,7 @@ if (allSatisfy!(isAwaitable, Awaitable)) {
 }
 
 ///
-public size_t awaitAny(Awaitable)(Awaitable[] args) 
+public size_t awaitAny(Awaitable)(Awaitable[] args)
 if (allSatisfy!(isAwaitable, Awaitable)) {
     pollfd* fds = cast(pollfd*)calloc(args.length, pollfd.sizeof);
     scope(exit) free(fds);
@@ -386,7 +386,7 @@ if (allSatisfy!(isAwaitable, Awaitable)) {
     }
     ssize_t resp;
     do {
-        resp = poll(fds, args.length, -1); 
+        resp = poll(fds, args.length, -1);
     } while (resp < 0 && errno == EINTR);
     foreach (idx, ref fd; fds[0..args.length]) {
         if (fd.revents & POLL_IN) {
@@ -451,7 +451,7 @@ package(photon) void schedulerEntry(size_t n)
     terminateWorkQueues();
 }
 
-/// Convenience overload for functions
+/// Convenience overload for functions.
 public void go(void function() func) {
     go({ func(); });
 }
@@ -477,7 +477,7 @@ public void go(void delegate() func) {
     scheds[choice].queue.event.trigger();
 }
 
-/// Convenience overload for goOnSameThread that accepts functions 
+/// Convenience overload for goOnSameThread that accepts functions.
 public void goOnSameThread(void function() func) {
     goOnSameThread({ func(); });
 }
@@ -519,7 +519,7 @@ enum DescriptorState: uint {
 
 // list of awaiting fibers
 shared struct Descriptor {
-    ReaderState _readerState;   
+    ReaderState _readerState;
     AwaitingFiber* _readerWaits;
     WriterState _writerState;
     AwaitingFiber* _writerWaits;
@@ -607,7 +607,7 @@ extern(C) void graceful_shutdown_on_signal(int, siginfo_t*, void*)
     _exit(9);
 }
 
-version(photon_tracing) 
+version(photon_tracing)
 void printStats()
 {
     // TODO: report on various events in eventloop/scheduler
@@ -656,7 +656,7 @@ public void startloop()
         epoll_ctl(sched.event_loop_fd, EPOLL_CTL_ADD, sched.queue.event.fd, &event).checked;
     }
 
-    
+
     termination = RawEvent(0);
     epoll_event event;
     event.events = EPOLLIN;
@@ -666,7 +666,7 @@ public void startloop()
     }
 
     {
-        
+
         sigaction_t action;
         action.sa_sigaction = &graceful_shutdown_on_signal;
         sigaction(SIGTERM, &action, null).checked;
@@ -718,7 +718,7 @@ void processEventsEntry(size_t numSched)
                     logf("Read event for fd=%d", fd);
                     auto state = descriptor.readerState;
                     logf("read state = %d", state);
-                    final switch(state) with(ReaderState) { 
+                    final switch(state) with(ReaderState) {
                         case EMPTY:
                             logf("Trying to schedule readers");
                             descriptor.changeReader(EMPTY, READY);
@@ -746,7 +746,7 @@ void processEventsEntry(size_t numSched)
                     logf("Write event for fd=%d", fd);
                     auto state = descriptor.writerState;
                     logf("write state = %d", state);
-                    final switch(state) with(WriterState) { 
+                    final switch(state) with(WriterState) {
                         case FULL:
                             descriptor.changeWriter(FULL, READY);
                             descriptor.scheduleWriters(fd, numSched);
@@ -970,7 +970,7 @@ extern(C) ssize_t write(int fd, const void *buf, size_t count)
 extern(C) ssize_t accept(int sockfd, sockaddr *addr, socklen_t *addrlen)
 {
     return universalSyscall!(SYS_ACCEPT, "accept", SyscallKind.accept, Fcntl.explicit, EWOULDBLOCK)
-        (sockfd, cast(size_t) addr, cast(size_t) addrlen);    
+        (sockfd, cast(size_t) addr, cast(size_t) addrlen);
 }
 
 extern(C) ssize_t accept4(int sockfd, sockaddr *addr, socklen_t *addrlen, int flags)
@@ -998,7 +998,7 @@ extern(C) size_t recv(int sockfd, void *buf, size_t len, int flags) nothrow {
     src_addr.sin_port = 0;
     src_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     ssize_t addrlen = sockaddr_in.sizeof;
-    return recvfrom(sockfd, buf, len, flags, cast(sockaddr*)&src_addr, &addrlen);   
+    return recvfrom(sockfd, buf, len, flags, cast(sockaddr*)&src_addr, &addrlen);
 }
 
 extern(C) private ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags,

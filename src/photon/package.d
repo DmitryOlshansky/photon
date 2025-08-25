@@ -1,10 +1,10 @@
 /++
     Photon is a lightweight transparent fiber scheduler. It's inspired by Golang's green thread model and
-    the spawn function is called `go` doing the same job that Golang's keyword does. 
-    The framework API surface is kept to a minimum, many programs can be written using only 
-    three primitives: `startloop` to initialize Photon, `runFibers` to start fiber scheduler and 
+    the spawn function is called `go` doing the same job that Golang's keyword does.
+    The framework API surface is kept to a minimum, many programs can be written using only
+    three primitives: `startloop` to initialize Photon, `runFibers` to start fiber scheduler and
     `go` to create tasks, including the initial tasks.
-    
+
     Example, showcasing channels and std.range interop:
     ----
     module examples.channels;
@@ -91,7 +91,7 @@ public void go(void delegate() func);
 public void go(void function() func);
 
 /// Same as go but make sure the fiber is scheduled on the same thread of the threadpool.
-/// Could be useful if there is a need to propagate TLS variable. 
+/// Could be useful if there is a need to propagate TLS variable.
 public void goOnSameThread(void delegate() func);
 
 /// ditto
@@ -139,7 +139,7 @@ private:
     ref buf() shared {
         return *cast(RingQueue!(T, Event)**)&buf_;
     }
-    
+
     ref T item() {
         return *cast(T*)&item_;
     }
@@ -446,7 +446,7 @@ private:
     PooledEntry!T* pool;
     shared size_t allocated;
     size_t size;
-    Duration maxIdle;    
+    Duration maxIdle;
     T delegate() open;
     void delegate(ref T) close;
     shared bool working;

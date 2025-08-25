@@ -3,16 +3,16 @@ module photon.ds.intrusive_queue;
 import photon.ds.common;
 import core.internal.spinlock;
 
-shared struct IntrusiveQueue(T, Event) 
+shared struct IntrusiveQueue(T, Event)
 if (is(T : Object)) {
 private:
     SpinLock lock = SpinLock(SpinLock.Contention.brief);
     T head;
     T tail;
-    bool exhausted = true; 
+    bool exhausted = true;
 public:
     Event event;
-    
+
     this(Event ev) {
         event = ev;
     }

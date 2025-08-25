@@ -83,12 +83,12 @@ int main(string[] argv) {
             auto delta =  stats.delta(prev);
             prev = stats;
             SysTime dt = Clock.currTime;
-            log.writefln("%s,%s,%f,%f,%f,%f,%f", 
+            log.writefln("%s,%s,%f,%f,%f,%f,%f",
                 dt.toISOExtString, stats.name,
                 delta.rbytes / MB,
                 delta.wbytes / MB,
                 delta.stime / tickSize,
-                delta.utime / tickSize, 
+                delta.utime / tickSize,
                 delta.rss * pageSize / MB
             );
         }

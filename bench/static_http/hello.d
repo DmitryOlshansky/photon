@@ -17,7 +17,7 @@ class HelloWorldProcessor : HttpProcessor {
     HttpHeader[] headers = [HttpHeader("Content-Type", "text/plain; charset=utf-8")];
 
     this(Socket sock){ super(sock); }
-    
+
     override void handle(HttpRequest req) {
         respondWith("Hello, world!", 200, headers);
     }

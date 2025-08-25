@@ -33,19 +33,19 @@ nothrow:
         auto ret = WaitForSingleObject(cast(HANDLE)ev, INFINITE);
         assert(ret == WAIT_OBJECT_0, "Failed while waiting on event");
     }
-    
-    void trigger() { 
+
+    void trigger() {
         auto ret = SetEvent(cast(HANDLE)ev);
         assert(ret != 0);
     }
-    
+
     HANDLE ev;
 }
 
 struct MultiAwait
 {
     int n;
-    void delegate() trigger; 
+    void delegate() trigger;
     MultiAwaitBox* box;
 }
 
@@ -73,7 +73,7 @@ extern(Windows) VOID waitAnyCallback(PTP_CALLBACK_INSTANCE Instance, PVOID Conte
         await.trigger();
     }
     auto cnt = atomicFetchSub(await.box.refCount, 1);
-    if (cnt == 1) free(await.box);    
+    if (cnt == 1) free(await.box);
     free(await);
     CloseThreadpoolWait(Wait);
 }
@@ -115,9 +115,9 @@ public struct Event {
     private void registerForWaitAny(int n, MultiAwaitBox* box) shared {
         this.unshared.registerForWaitAny(n, box);
     }
-    
+
     /// Trigger the event.
-    void trigger() { 
+    void trigger() {
         auto ret = SetEvent(cast(HANDLE)ev);
         assert(ret != 0);
     }
@@ -125,7 +125,7 @@ public struct Event {
     void trigger() shared {
         this.unshared.trigger();
     }
-    
+
 private:
     HANDLE ev;
 }
@@ -150,8 +150,8 @@ public struct Semaphore {
         sem = cast(shared(HANDLE))CreateSemaphoreA(null, count, 4096, null);
         assert(sem != null, "Failed to create semaphore");
     }
-    
-    /// 
+
+    ///
     void wait() {
         auto wait = CreateThreadpoolWait(&waitCallback, cast(void*)currentFiber, &environ);
         wenforce(wait != null, "Failed to create threadpool wait object");
@@ -178,9 +178,9 @@ public struct Semaphore {
         this.unshared.registerForWaitAny(n, box);
     }
 
-    
-    /// 
-    void trigger(int count) { 
+
+    ///
+    void trigger(int count) {
         auto ret = ReleaseSemaphore(cast(HANDLE)sem, count, null);
         assert(ret);
     }
@@ -190,7 +190,7 @@ public struct Semaphore {
         this.unshared.trigger(count);
     }
 
-    /// 
+    ///
     void dispose() {
         CloseHandle(cast(HANDLE)sem);
     }
@@ -199,7 +199,7 @@ public struct Semaphore {
     void dispose() shared {
         this.unshared.dispose();
     }
-    
+
 private:
     HANDLE sem;
 }
@@ -240,12 +240,12 @@ public void delay(Duration req) {
     tm.wait(req);
 }
 
-/// 
-enum isAwaitable(E) = is (E : Event) || is (E : Semaphore) 
+///
+enum isAwaitable(E) = is (E : Event) || is (E : Semaphore)
     || is(E : Event*) || is(E : Semaphore*);
 
 ///
-public size_t awaitAny(Awaitable...)(auto ref Awaitable args) 
+public size_t awaitAny(Awaitable...)(auto ref Awaitable args)
 if (allSatisfy!(isAwaitable, Awaitable)) {
     auto box = cast(MultiAwaitBox*)calloc(1, MultiAwaitBox.sizeof);
     box.refCount = args.length;
@@ -258,7 +258,7 @@ if (allSatisfy!(isAwaitable, Awaitable)) {
 }
 
 ///
-public size_t awaitAny(Awaitable)(Awaitable[] args) 
+public size_t awaitAny(Awaitable)(Awaitable[] args)
 if (allSatisfy!(isAwaitable, Awaitable)) {
     auto box = cast(MultiAwaitBox*)calloc(1, MultiAwaitBox.sizeof);
     box.refCount = args.length;
@@ -277,14 +277,14 @@ struct SchedulerBlock {
 }
 static assert(SchedulerBlock.sizeof == 64);
 
-class FiberExt : Fiber { 
+class FiberExt : Fiber {
     FiberExt next;
     uint numScheduler;
     int bytesTransfered;
     int wakeUpObject;
 
     enum PAGESIZE = 4096;
-    
+
     this(void function() fn, uint numSched) nothrow {
         super(fn);
         numScheduler = numSched;
@@ -365,7 +365,7 @@ public void go(void delegate() func) {
     f.schedule();
 }
 
-/// Convenience overload for goOnSameThread that accepts functions 
+/// Convenience overload for goOnSameThread that accepts functions.
 public void goOnSameThread(void function() func) {
     goOnSameThread({ func(); });
 }
@@ -544,7 +544,7 @@ extern(Windows) int send(SOCKET s, void* buf, int len, int flags) {
             FiberExt.yield();
             return currentFiber.bytesTransfered;
         }
-        else 
+        else
             return ret;
     }
 }

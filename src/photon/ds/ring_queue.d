@@ -17,7 +17,7 @@ struct RingQueue(T, Event)
     bool closed;
     shared size_t refCount;
     AlignedSpinLock lock;
-    
+
     this(size_t capacity, Event cts, Event rtr)
     {
         store = cast(T*)malloc(T.sizeof * capacity);
