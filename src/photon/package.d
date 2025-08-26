@@ -73,8 +73,8 @@ else version(VisionOS) version = Darwin;
 
 version(Windows) public import photon.windows.core;
 else version(linux) public import photon.linux.core;
-else version(Darwin) public import photon.macos.core;
 else version(FreeBSD) public import photon.freebsd.core;
+else version(Darwin) public import photon.reactor;
 else static assert(false, "Target OS not supported by Photon yet!");
 
 public import photon.threadpool;
@@ -82,21 +82,26 @@ public import photon.task;
 
 version(PhotonDocs) {
 
+/// Task result allows one fiber to wait on the other by joining the execution.
+public struct Task {
+    void join();
+}
+
 /// Initialize event loop and internal data structures for Photon scheduler.
-public void startloop() nothrow @trusted;
+public Task startloop() nothrow @trusted;
 
 /// Setup a fiber task to run on the Photon scheduler.
-public void go(void delegate() func)  @trusted;
+public Task go(void delegate() func)  @trusted;
 
 /// ditto
-public void go(void function() func) @safe;
+public Task go(void function() func) @safe;
 
 /// Same as go but make sure the fiber is scheduled on the same thread of the threadpool.
 /// Could be useful if there is a need to propagate TLS variable. 
-public void goOnSameThread(void delegate() func) @trusted;
+public Task goOnSameThread(void delegate() func) @trusted;
 
 /// ditto
-public void goOnSameThread(void function() func) @safe;
+public Task goOnSameThread(void function() func) @safe;
 
 /**
     Run work on a dedicated thread pool and pass the result back to the calling fiber or thread.

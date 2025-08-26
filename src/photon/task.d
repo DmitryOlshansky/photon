@@ -3,7 +3,7 @@ module photon.task;
 // TODO: time to factor out common parts of schedulers?
 version(linux) import photon.linux.core;
 else version(FreeBSD) import photon.freebsd.core;
-else version(OSX) import photon.macos.core;
+else version(OSX) import photon.reactor;
 else version(Windows) import photon.windows.core;
 import std.concurrency;
 

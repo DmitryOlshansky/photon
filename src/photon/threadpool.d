@@ -22,7 +22,7 @@ else version(Windows) public import photon.windows.core;
 =======
 version(linux) import photon.linux.core;
 else version(FreeBSD) import photon.freebsd.core;
-else version(OSX) import photon.macos.core;
+else version(OSX) import photon.reactor;
 else version(Windows) import photon.windows.core;
 >>>>>>> 014bb01 (Starting to improve vibe.d compatibility)
 
