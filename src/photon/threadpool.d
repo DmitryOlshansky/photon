@@ -14,17 +14,10 @@ else version(WatchOS) version = Darwin;
 else version(VisionOS) version = Darwin;
 
 // TODO: time to factor out common parts of schedulers?
-<<<<<<< HEAD
-version(linux) public import photon.linux.core;
-else version(FreeBSD) public import photon.freebsd.core;
-else version(Darwin) public import photon.macos.core;
-else version(Windows) public import photon.windows.core;
-=======
 version(linux) import photon.linux.core;
 else version(FreeBSD) import photon.freebsd.core;
-else version(OSX) import photon.reactor;
+else version(Darwin) import photon.reactor;
 else version(Windows) import photon.windows.core;
->>>>>>> 014bb01 (Starting to improve vibe.d compatibility)
 
 
 alias Work = void delegate();
