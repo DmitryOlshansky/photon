@@ -61,7 +61,7 @@ public:
 	T opCast(T)() const shared @safe nothrow if (is(T == bool)) { return _fiber !is null; }
 
 	void join() @trusted { if (_fiber) _fiber.join(); }
-	void joinUninterruptible() @trusted nothrow { if (_fiber) _fiber.join(); }
+	void joinUninterruptible() @trusted { if (_fiber) _fiber.join(); }
 	void interrupt() @trusted nothrow { 
         //noop
     }
