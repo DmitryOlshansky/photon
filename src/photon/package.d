@@ -61,18 +61,11 @@ import core.thread;
 import core.atomic;
 import core.internal.spinlock;
 import core.lifetime;
-import photon.macos.version_;
 import std.meta;
 
 import photon.ds.ring_queue;
 
-
-version(Windows) public import photon.windows.core;
-else version(linux) public import photon.reactor;
-else version(FreeBSD) public import photon.freebsd.core;
-else version(Darwin) public import photon.reactor;
-else static assert(false, "Target OS not supported by Photon yet!");
-
+public import photon.core;
 public import photon.threadpool;
 public import photon.task;
 

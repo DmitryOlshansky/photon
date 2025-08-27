@@ -6,13 +6,7 @@ import core.thread, core.atomic;
 import std.random;
 
 import photon.ds.intrusive_queue;
-import photon.macos.version_;
-
-// TODO: time to factor out common parts of schedulers?
-version(linux) import photon.reactor;
-else version(FreeBSD) import photon.freebsd.core;
-else version(Darwin) import photon.reactor;
-else version(Windows) import photon.windows.core;
+import photon.core;
 
 
 alias Work = void delegate();

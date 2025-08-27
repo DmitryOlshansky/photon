@@ -27,7 +27,12 @@ import core.sys.posix.sys.socket;
 import core.sys.posix.poll;
 import core.sys.posix.netinet.in_;
 import core.memory;
-import photon.macos.version_;
+
+version(OSX) version = Darwin;
+else version(iOS) version = Darwin;
+else version(TVOS) version = Darwin;
+else version(WatchOS) version = Darwin;
+else version(VisionOS) version = Darwin;
 
 version (Darwin) {
     import photon.macos.core;
