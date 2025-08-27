@@ -225,9 +225,12 @@ public auto timer() {
 }
 
 enum int MAX_EVENTS = 500;
+shared long inited;
 
 public void startloop() nothrow @trusted
 {
+    auto s = atomicFetchAdd(inited, 1);
+    if (s != 0) return;
     cpu_set_t cpus;
     size_t threads = 0;
     if (sched_getaffinity(gettid(), cpus.sizeof, &cpus) < 0) {

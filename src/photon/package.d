@@ -117,6 +117,67 @@ void runFibers() @trusted
     terminateWorkQueues();
 }
 
+shared struct Mutex {
+    Semaphore sem;
+    long     counter;
+
+    private this(long cnt) {
+        sem = semaphore(0);
+        counter = cnt;
+    }
+
+    @disable this(this);
+
+    void lock() {
+        auto v = atomicFetchSub(counter, 1);
+        if (v <= 0) {
+            sem.wait();
+        }
+    }
+
+    void unlock() {
+        auto v = atomicFetchAdd(counter, 1);
+        if (v < 0) {
+            sem.trigger(1);
+        }
+    }
+
+    void dispose() {
+        sem.dispose();
+    }
+}
+
+/// Create non-recursive mutex
+auto mutex() {
+    return cast(shared)Mutex(1);
+}
+
+unittest {
+    startloop();
+    auto mtx = mutex();
+    int counter = 0;
+    go({
+        foreach (_; 0..100) {
+            mtx.lock();
+            int c = counter;
+            delay(1.msecs);
+            counter = c + 1;
+            mtx.unlock();
+        }
+    });
+    go({
+        foreach (_; 0..100) {
+            mtx.lock();
+            int c = counter;
+            delay(1.msecs);
+            counter = c + 1;
+            mtx.unlock();
+        }
+    });
+    runFibers();
+    assert(counter == 200);
+}
+
 /++
     A ref-counted channel that is safe to share between multiple fibers.
     In essence it's a multiple producer single consumer queue, that implements

@@ -245,6 +245,7 @@ public nothrow auto semaphore(int initial) {
 }
 
 enum int MAX_EVENTS = 500;
+shared long inited;
 
 void notifyEventloop(size_t n) nothrow {
     KEvent event;
@@ -260,22 +261,11 @@ int getCurrentKqueue() nothrow {
     return currentFiber !is null ? scheds[currentFiber.numScheduler].event_loop : scheds[0].event_loop;
 }
 
-extern(C) void graceful_shutdown_on_signal(int, siginfo_t*, void*)
-{
-    version(photon_tracing) printStats();
-    _exit(9);
-}
-
-version(photon_tracing) 
-void printStats()
-{
-    // TODO: report on various events in eventloop/scheduler
-    string msg = "Tracing report:\n\n";
-    write(2, msg.ptr, msg.length);
-}
 
 public void startloop()
 {
+    auto s = atomicFetchAdd(inited, 1);
+    if (s != 0) return;
     int threads = cast(int)sysconf(_SC_NPROCESSORS_ONLN).checked;
     debug(photon_single) {
         threads = 1;
