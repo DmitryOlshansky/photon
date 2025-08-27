@@ -6,15 +6,10 @@ import core.thread, core.atomic;
 import std.random;
 
 import photon.ds.intrusive_queue;
-
-version(OSX) version = Darwin;
-else version(iOS) version = Darwin;
-else version(TVOS) version = Darwin;
-else version(WatchOS) version = Darwin;
-else version(VisionOS) version = Darwin;
+import photon.macos.version_;
 
 // TODO: time to factor out common parts of schedulers?
-version(linux) import photon.linux.core;
+version(linux) import photon.reactor;
 else version(FreeBSD) import photon.freebsd.core;
 else version(Darwin) import photon.reactor;
 else version(Windows) import photon.windows.core;
@@ -51,18 +46,19 @@ struct WorkQueue {
 static assert (WorkQueue.sizeof == 64);
 
 __gshared WorkQueue[] queues;
+__gshared Thread[] workThreads;
 shared bool workQueueTerminated = false;
 
 void initWorkQueues(size_t threads) nothrow {
     queues = new WorkQueue[threads];
+    workThreads = new Thread[threads];
     foreach (ref q; queues) {
         q.runq = IntrusiveQueue!(WorkItem, RawEvent)(RawEvent(0));
     }
     void run(size_t n) nothrow {
         try {
-            auto t = new Thread(() => processWorkQueue(n));
-            t.isDaemon = true;
-            t.start();
+            workThreads[n] = new Thread(() => processWorkQueue(n));
+            workThreads[n].start();
         } catch(Exception) {}
     }
     foreach (i; 0..threads) {
@@ -74,6 +70,9 @@ void terminateWorkQueues() {
     workQueueTerminated = true;
     foreach (ref q; queues) {
         q.runq.event.trigger();
+    }
+    foreach (ref t; workThreads) {
+        t.join();
     }
 }
 

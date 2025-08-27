@@ -1,9 +1,6 @@
 module photon.macos.core;
-version(OSX) version = Darwin;
-else version(iOS) version = Darwin;
-else version(TVOS) version = Darwin;
-else version(WatchOS) version = Darwin;
-else version(VisionOS) version = Darwin;
+import photon.macos.version_;
+
 version(Darwin):
 package(photon):
 
@@ -52,6 +49,12 @@ enum SYS_CLOSE = 6;
 enum SYS_NANOSLEEP = 334;
 enum SYS_GETTID = 286;
 enum SYS_POLL = 230;
+
+immutable size_t pageSize;
+
+shared static this() {
+    pageSize = sysconf(_SC_PAGESIZE);
+}
 
 shared struct RawEvent {
 nothrow:
@@ -275,7 +278,9 @@ public void startloop()
         threads = 1;
     }
     ssize_t fdMax = sysconf(_SC_OPEN_MAX).checked;
-    descriptors = (cast(shared(Descriptor*)) mmap(null, fdMax * Descriptor.sizeof, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0))[0..fdMax];
+    fdMax = fdMax > 2^^24 ? 2^^24 : fdMax;
+    ssize_t size = ((fdMax * Descriptor.sizeof) + pageSize-1) & ~(pageSize-1);
+    descriptors = (cast(shared(Descriptor*)) mmap(null, size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0))[0..fdMax];
     scheds = new SchedulerBlock[threads];
     foreach(ref sched; scheds) {
         sched.queue = IntrusiveQueue!(FiberExt, RawEvent)(RawEvent(0));

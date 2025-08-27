@@ -61,18 +61,14 @@ import core.thread;
 import core.atomic;
 import core.internal.spinlock;
 import core.lifetime;
+import photon.macos.version_;
 import std.meta;
 
 import photon.ds.ring_queue;
 
-version(OSX) version = Darwin;
-else version(iOS) version = Darwin;
-else version(TVOS) version = Darwin;
-else version(WatchOS) version = Darwin;
-else version(VisionOS) version = Darwin;
 
 version(Windows) public import photon.windows.core;
-else version(linux) public import photon.linux.core;
+else version(linux) public import photon.reactor;
 else version(FreeBSD) public import photon.freebsd.core;
 else version(Darwin) public import photon.reactor;
 else static assert(false, "Target OS not supported by Photon yet!");
@@ -125,6 +121,7 @@ void runFibers() @trusted
     schedulerEntry(0);
     foreach (t; threads)
         t.join();
+    terminateWorkQueues();
 }
 
 /++

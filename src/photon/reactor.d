@@ -1,6 +1,5 @@
 module photon.reactor;
-
-version(OSX):
+version(Posix):
 package(photon):
 
 import std.stdio;
@@ -28,11 +27,17 @@ import core.sys.posix.sys.socket;
 import core.sys.posix.poll;
 import core.sys.posix.netinet.in_;
 import core.memory;
+import photon.macos.version_;
 
-version (OSX) {
+version (Darwin) {
     import photon.macos.core;
     import photon.macos.support;
+} else version(linux) {
+    import photon.linux.core;
+    import photon.linux.support;
+    import photon.linux.syscalls;
 }
+
 import photon.ds.common;
 import photon.ds.intrusive_queue;
 import photon.threadpool;
@@ -98,7 +103,6 @@ class FiberExt : Fiber {
         bool suspend = false;
         joinLock.lock();
         if (state != Fiber.State.TERM) {
-            currentFiber.next = joiners;
             joiners = currentFiber;
             suspend = true;
         }
@@ -109,10 +113,8 @@ class FiberExt : Fiber {
     void wakeUpJoiners(size_t numSched) {
         joinLock.lock();
         FiberExt f = joiners;
-        while (f) {
-            FiberExt next = f.next;
-            f.schedule(numSched);
-            f = next;
+        if (joiners) {
+            joiners.schedule(numSched);
         }
         joinLock.unlock();
     }
@@ -125,7 +127,7 @@ struct SchedulerBlock {
     shared IntrusiveQueue!(FiberExt, RawEvent) queue;
     shared uint assigned;
     int event_loop;
-    int padding;
+    ubyte[64 - queue.sizeof - assigned.sizeof - event_loop.sizeof] padding;
 }
 static assert(SchedulerBlock.sizeof == 64);
 
@@ -432,7 +434,6 @@ ssize_t universalSyscall(size_t ident, string name, SyscallKind kind, Fcntl fcnt
         shared(Descriptor)* descriptor = descriptors.ptr + fd;
         if (atomicLoad(descriptor.state) == DescriptorState.THREADPOOL) {
             logf("%s syscall THREADPOLL FD=%d", name, fd);
-            //TODO: offload syscall to thread-pool
             auto result = offload(() {
                 auto ret = __syscall(ident, fd, args);
                 if (ret < 0) {
@@ -594,7 +595,7 @@ extern(C) ssize_t sendto(int sockfd, const void *buf, size_t len, int flags,
         (sockfd, cast(size_t) buf, len, flags, cast(size_t) dest_addr, cast(size_t) addrlen);
 }
 
-extern(C) size_t recv(int sockfd, void *buf, size_t len, int flags) nothrow {
+extern(C) ssize_t recv(int sockfd, void *buf, size_t len, int flags) nothrow {
     sockaddr_in src_addr;
     src_addr.sin_family = AF_INET;
     src_addr.sin_port = 0;
@@ -745,9 +746,4 @@ extern(C) private int close(int fd) nothrow
     logf("HOOKED CLOSE FD=%d", fd);
     deregisterFd(fd);
     return cast(int)__syscall(SYS_CLOSE, fd);
-}
-
-int gettid()
-{
-    return cast(int)__syscall(SYS_GETTID);
 }
