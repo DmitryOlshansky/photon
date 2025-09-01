@@ -49,15 +49,6 @@ void initWorkQueues(size_t threads) nothrow {
     foreach (ref q; queues) {
         q.runq = IntrusiveQueue!(WorkItem, RawEvent)(RawEvent(0));
     }
-    void run(size_t n) nothrow {
-        try {
-            workThreads[n] = new Thread(() => processWorkQueue(n));
-            workThreads[n].start();
-        } catch(Exception) {}
-    }
-    foreach (i; 0..threads) {
-        run(i);
-    }
 }
 
 void terminateWorkQueues() {
@@ -67,6 +58,18 @@ void terminateWorkQueues() {
     }
     foreach (ref t; workThreads) {
         t.join();
+    }
+}
+
+void startWorkQueue(size_t threads) {
+    void run(size_t n) nothrow {
+        try {
+            workThreads[n] = new Thread(() => processWorkQueue(n));
+            workThreads[n].start();
+        } catch(Exception) {}
+    }
+    foreach (i; 0..threads) {
+        run(i);
     }
 }
 

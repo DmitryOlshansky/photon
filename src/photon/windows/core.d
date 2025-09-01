@@ -279,6 +279,7 @@ static assert(SchedulerBlock.sizeof == 64);
 
 class FiberExt : Fiber { 
     FiberExt next;
+    FiberExt back;
     uint numScheduler;
     int bytesTransfered;
     int wakeUpObject;

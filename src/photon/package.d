@@ -63,6 +63,7 @@ import core.internal.spinlock;
 import core.lifetime;
 import std.meta;
 
+import photon.ds.common;
 import photon.ds.ring_queue;
 
 public import photon.core;
@@ -102,6 +103,7 @@ T offload(T)(T delegate() work) @trusted;
 /// Start sheduler and run fibers until all are terminated.
 void runFibers() @trusted
 {
+    startWorkQueue(scheds.length);
     Thread runThread(size_t n){ // damned D lexical capture "semantics"
         auto t = new Thread(() => schedulerEntry(n));
         t.start();
@@ -118,28 +120,31 @@ void runFibers() @trusted
 }
 
 shared struct Mutex {
+@trusted:
+nothrow:
+private:
     Semaphore sem;
     long     counter;
 
-    private this(long cnt) {
-        sem = semaphore(0);
+    this(long cnt) {
+        sem = semaphore(1);
         counter = cnt;
     }
 
     @disable this(this);
-
+public:
     void lock() {
-        auto v = atomicFetchSub(counter, 1);
-        if (v <= 0) {
+        /*auto v = atomicFetchSub(counter, 1);
+        if (v <= 0) {*/
             sem.wait();
-        }
+        //}
     }
 
     void unlock() {
-        auto v = atomicFetchAdd(counter, 1);
-        if (v < 0) {
+        /*auto v = atomicFetchAdd(counter, 1);
+        if (v <= 0) {*/
             sem.trigger(1);
-        }
+        //}
     }
 
     void dispose() {
@@ -152,6 +157,7 @@ auto mutex() {
     return cast(shared)Mutex(1);
 }
 
+///
 unittest {
     startloop();
     auto mtx = mutex();
@@ -175,7 +181,185 @@ unittest {
         }
     });
     runFibers();
+    mtx.dispose();
     assert(counter == 200);
+}
+
+struct RecursiveMutex {
+nothrow:
+@trusted:
+private:
+    Semaphore sem;
+    long counter;
+    FiberExt owner;
+    long recCount;
+    SpinLock splk;
+
+    this(long cnt) {
+        sem = semaphore(0);
+        counter = cnt;
+        recCount = 0;
+        splk = SpinLock(SpinLock.Contention.brief);
+    }
+
+    @disable this(this);
+public:
+    void lock() shared {
+        assert(currentFiber);
+        splk.lock();
+        if (owner is cast(shared)currentFiber) {
+            this.unshared.recCount++;
+            splk.unlock();
+            return;
+        }
+        auto v = this.unshared.counter--;
+        bool suspend;
+        if (v <= 0) {
+            suspend = true;
+        } else {
+            this.unshared.owner = currentFiber;
+            assert(this.recCount == 0);
+        }
+        splk.unlock();
+        if (suspend) {
+            sem.wait();
+            splk.lock();
+            this.unshared.owner = currentFiber;
+            assert(this.recCount == 0);
+            splk.unlock();
+        }
+    }
+
+    void unlock() shared {
+        assert(currentFiber);
+        splk.lock();
+        assert(owner is cast(shared)currentFiber);
+        if (this.unshared.recCount != 0) {
+            this.unshared.recCount--;
+            splk.unlock();
+            return;
+        } 
+        this.unshared.owner = null;
+        auto v = this.unshared.counter++;
+        bool notify;
+        if (v <= 0) {
+            notify = true;
+        }
+        splk.unlock();
+        if (notify) {
+            sem.trigger(1);
+        }
+    }
+
+    void dispose() shared {
+        sem.dispose();
+    }
+}
+
+auto recursiveMutex() {
+    return cast(shared)RecursiveMutex(1);
+}
+
+unittest {
+    enum ITERS = 100;
+    enum COUNT = 10;
+    enum LOCK_CNT = 1;
+    enum JOBS = 10;
+    startloop();
+    auto mtxs = new shared(Mutex)[COUNT];
+    int[] counters = new int[COUNT];
+    foreach (i; 0..COUNT) {
+        mtxs[i] = mutex();
+    }
+    void task() {
+        foreach(_; 0..ITERS){
+            foreach (i; 0..COUNT) {
+                foreach (__; 0..LOCK_CNT)
+                    mtxs[i].lock();
+                counters[i]++;
+                foreach(__;0..LOCK_CNT)
+                    mtxs[i].unlock();
+            }
+        }
+    }
+    foreach(_; 0..JOBS) {
+        go(&task);
+    }
+    runFibers();
+    foreach (i; 0..COUNT) {
+        assert(counters[i] == ITERS);
+    }
+}
+
+version(Posix)
+public struct CondVar {
+private:
+    FiberExt waiters;
+    SpinLock splk;
+public:
+    void wait(M)(ref M mutex) shared {
+        assert(currentFiber !is null);
+        splk.lock();
+        mutex.unlock();
+        auto f = currentFiber;
+        if (waiters !is null) {
+            f.next = waiters;
+            f.back = waiters.back;
+            waiters.back = f;
+            waiters = f;
+        } else {
+            f.next = null;
+            f.back = null;
+            waiters = f;
+        }
+        splk.unlock();
+        FiberExt.yield();
+        mutex.lock();
+    }
+
+    void wait(M)(ref M mutex, Duration d) shared {
+        assert(currentFiber !is null);
+        splk.lock();
+        mutex.unlock();
+        auto f = currentFiber;
+        if (waiters !is null) {
+            f.next = waiters;
+            f.back = waiters.back;
+            waiters = f;
+        } else {
+            currentFiber.next = null;
+            currentFiber.back = null;
+        }
+        f.wakeFd = 0;
+        TimedFiber tf = timerEntry(f, d);
+        timerQueue.insert(tf);
+        splk.unlock();
+        FiberExt.yield();
+        if (f.wakeFd == TIMER_WAKE) {
+            splk.lock();
+            if (f == this.unshared.waiters) {
+                this.unshared.waiters = f.next;
+                if (this.unshared.waiters !is null) {
+                    waiters.prev = f.prev;
+                }
+            } else {
+                if (f.prev !is null) {
+                    f.prev.next = f.next;
+                }
+                if (f.next !is null) {
+                    f.next.prev = f.prev;
+                }
+            }
+            splk.unlock();
+        }
+        mutex.lock();
+    }
+
+    void signal() {
+        splk.lock();
+
+        splk.unlock();
+    }
 }
 
 /++

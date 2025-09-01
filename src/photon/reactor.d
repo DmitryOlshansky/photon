@@ -81,6 +81,7 @@ enum wokenUpByTimer = 2;
 
 class FiberExt : Fiber { 
     FiberExt next;
+    FiberExt back;
     uint numScheduler;
     int wakeFd; // recieves fd that woken us up
     ThreadInfo tidInfo;
@@ -168,6 +169,7 @@ TimedFiber timerEntry(FiberExt* fiber, const timespec* ts) nothrow {
 
 enum int MAX_EVENTS = 500;
 enum int SIGNAL = 42;
+enum int TIMER_WAKE = -2;
 
 package(photon) void schedulerEntry(size_t n)
 {
@@ -188,6 +190,7 @@ package(photon) void schedulerEntry(size_t n)
         for (;;) {
             TimedFiber* f = timeQueue.pop(t);
             if (f == null) break;
+            f.fiber.wakeFd = TIMER_WAKE;
             f.schedule(n);
         }
         FiberExt f = sched.queue.drain();
