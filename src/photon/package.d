@@ -158,6 +158,7 @@ auto mutex() {
 }
 
 ///
+version(Posix)
 unittest {
     startloop();
     auto mtx = mutex();
