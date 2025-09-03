@@ -14,6 +14,7 @@ import std.random;
 import std.stdio;
 import std.traits;
 import std.meta;
+import std.concurrency;
 
 import rewind.map;
 
@@ -80,7 +81,7 @@ extern(Windows) VOID waitAnyCallback(PTP_CALLBACK_INSTANCE Instance, PVOID Conte
 
 /// Event object
 public struct Event {
-
+nothrow:
     @disable this(this);
 
     this(bool signaled) {
@@ -91,7 +92,7 @@ public struct Event {
     /// Wait for the event to be triggered, then reset and return atomically
     void waitAndReset() {
         auto wait = CreateThreadpoolWait(&waitCallback, cast(void*)currentFiber, &environ);
-        wenforce(wait != null, "Failed to create threadpool wait object");
+        checked(wait != null, "Failed to create threadpool wait object");
         SetThreadpoolWait(wait, cast(HANDLE)ev, null);
         FiberExt.yield();
         CloseThreadpoolWait(wait);
@@ -108,7 +109,7 @@ public struct Event {
         context.n = n;
         context.trigger = cast(void delegate())&this.trigger;
         auto wait = CreateThreadpoolWait(&waitAnyCallback, cast(void*)context, &environ);
-        wenforce(wait != null, "Failed to create threadpool wait object");
+        checked(wait != null, "Failed to create threadpool wait object");
         SetThreadpoolWait(wait, cast(HANDLE)ev, null);
     }
 
@@ -137,6 +138,7 @@ public auto event(bool signaled) {
 
 /// Semaphore object
 public struct Semaphore {
+nothrow:
     @disable this(this);
 
     this(int count) {
@@ -154,7 +156,7 @@ public struct Semaphore {
     /// 
     void wait() {
         auto wait = CreateThreadpoolWait(&waitCallback, cast(void*)currentFiber, &environ);
-        wenforce(wait != null, "Failed to create threadpool wait object");
+        checked(wait != null, "Failed to create threadpool wait object");
         SetThreadpoolWait(wait, cast(HANDLE)sem, null);
         FiberExt.yield();
         CloseThreadpoolWait(wait);
@@ -170,7 +172,7 @@ public struct Semaphore {
         context.n = n;
         context.trigger = { this.trigger(1); };
         auto wait = CreateThreadpoolWait(&waitAnyCallback, cast(void*)context, &environ);
-        wenforce(wait != null, "Failed to create threadpool wait object");
+        checked(wait != null, "Failed to create threadpool wait object");
         SetThreadpoolWait(wait, cast(HANDLE)sem, null);
     }
 
@@ -279,6 +281,8 @@ static assert(SchedulerBlock.sizeof == 64);
 
 class FiberExt : Fiber { 
     FiberExt next;
+    FiberExt back;
+    ThreadInfo tidInfo;
     uint numScheduler;
     int bytesTransfered;
     int wakeUpObject;
@@ -298,6 +302,10 @@ class FiberExt : Fiber {
     void schedule() nothrow
     {
         scheds[numScheduler].queue.push(this);
+    }
+
+    void join() {
+        assert(false);
     }
 }
 

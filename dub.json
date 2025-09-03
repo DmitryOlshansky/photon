@@ -3,10 +3,10 @@
 		"Dmitry Olshansky"
 	],
 	"copyright": "Copyright © 2023, Dmitry Olshansky",
-	"dependencies": {
-		"sharded-map": "~>2.7.0"
-	},
 	"description": "Photon - a transparent fiber scheduler",
+	"dependencies": {
+		"sharded-map" : "2.7.0"
+	},
 	"license": "BOOST",
 	"name": "photon",
 	"targetType": "library"

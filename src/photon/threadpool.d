@@ -6,18 +6,7 @@ import core.thread, core.atomic;
 import std.random;
 
 import photon.ds.intrusive_queue;
-
-version(OSX) version = Darwin;
-else version(iOS) version = Darwin;
-else version(TVOS) version = Darwin;
-else version(WatchOS) version = Darwin;
-else version(VisionOS) version = Darwin;
-
-// TODO: time to factor out common parts of schedulers?
-version(linux) public import photon.linux.core;
-else version(FreeBSD) public import photon.freebsd.core;
-else version(Darwin) public import photon.macos.core;
-else version(Windows) public import photon.windows.core;
+import photon.core;
 
 
 alias Work = void delegate();
@@ -34,7 +23,7 @@ class WorkItem {
         else version(FreeBSD)
             fiber.schedule();
         else
-            fiber.schedule(size_t.max); // schedule from "remote scheduler"
+            fiber.schedule(size_t.max, WAKE_TRIGGER); // schedule from "remote scheduler"
     }
 
     FiberExt fiber; // if waking up fiber
@@ -51,20 +40,14 @@ struct WorkQueue {
 static assert (WorkQueue.sizeof == 64);
 
 __gshared WorkQueue[] queues;
+__gshared Thread[] workThreads;
 shared bool workQueueTerminated = false;
 
-void initWorkQueues(size_t threads) {
+void initWorkQueues(size_t threads) nothrow {
     queues = new WorkQueue[threads];
+    workThreads = new Thread[threads];
     foreach (ref q; queues) {
         q.runq = IntrusiveQueue!(WorkItem, RawEvent)(RawEvent(0));
-    }
-    void run(size_t n) {
-        auto t = new Thread(() => processWorkQueue(n));
-        t.isDaemon = true;
-        t.start();
-    }
-    foreach (i; 0..threads) {
-        run(i);
     }
 }
 
@@ -72,6 +55,21 @@ void terminateWorkQueues() {
     workQueueTerminated = true;
     foreach (ref q; queues) {
         q.runq.event.trigger();
+    }
+    foreach (ref t; workThreads) {
+        t.join();
+    }
+}
+
+void startWorkQueue(size_t threads) {
+    void run(size_t n) nothrow {
+        try {
+            workThreads[n] = new Thread(() => processWorkQueue(n));
+            workThreads[n].start();
+        } catch(Exception) {}
+    }
+    foreach (i; 0..threads) {
+        run(i);
     }
 }
 
@@ -141,7 +139,7 @@ T offload(T)(T delegate() work) {
     }
 }
 
-T offload(T)(T delegate() nothrow work) nothrow{
+T offload(T)(T delegate() nothrow work) nothrow {
     if (currentFiber is null) return work();
     static if (!is(T == void)) {
         T result;

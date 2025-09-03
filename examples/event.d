@@ -34,9 +34,9 @@ void secondJob() {
 }
 
 void main() {
+    startloop();
     ev1 = event(false);
     ev2 = event(false);
-    startloop();
     go(&firstJob);
     go(&secondJob);
     runFibers();

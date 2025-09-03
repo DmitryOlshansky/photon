@@ -63,50 +63,47 @@ import core.internal.spinlock;
 import core.lifetime;
 import std.meta;
 
+import photon.ds.common;
 import photon.ds.ring_queue;
 
-version(OSX) version = Darwin;
-else version(iOS) version = Darwin;
-else version(TVOS) version = Darwin;
-else version(WatchOS) version = Darwin;
-else version(VisionOS) version = Darwin;
-
-version(Windows) public import photon.windows.core;
-else version(linux) public import photon.linux.core;
-else version(Darwin) public import photon.macos.core;
-else version(FreeBSD) public import photon.freebsd.core;
-else static assert(false, "Target OS not supported by Photon yet!");
-
+public import photon.core;
 public import photon.threadpool;
+public import photon.task;
 
 version(PhotonDocs) {
 
+/// Task result allows one fiber to wait on the other by joining the execution.
+public struct Task {
+    void join();
+}
+
 /// Initialize event loop and internal data structures for Photon scheduler.
-public void startloop();
+public Task startloop() nothrow @trusted;
 
 /// Setup a fiber task to run on the Photon scheduler.
-public void go(void delegate() func);
+public Task go(void delegate() func)  @trusted;
 
 /// ditto
-public void go(void function() func);
+public Task go(void function() func) @safe;
 
 /// Same as go but make sure the fiber is scheduled on the same thread of the threadpool.
 /// Could be useful if there is a need to propagate TLS variable. 
-public void goOnSameThread(void delegate() func);
+public Task goOnSameThread(void delegate() func) @trusted;
 
 /// ditto
-public void goOnSameThread(void function() func);
+public Task goOnSameThread(void function() func) @safe;
 
 /**
     Run work on a dedicated thread pool and pass the result back to the calling fiber or thread.
     This avoids blocking event loop on computationally intensive tasks.
 */
-T offload(T)(T delegate() work);
+T offload(T)(T delegate() work) @trusted;
 }
 
 /// Start sheduler and run fibers until all are terminated.
-void runFibers()
+void runFibers() @trusted
 {
+    startWorkQueue(scheds.length);
     Thread runThread(size_t n){ // damned D lexical capture "semantics"
         auto t = new Thread(() => schedulerEntry(n));
         t.start();
@@ -119,6 +116,258 @@ void runFibers()
     schedulerEntry(0);
     foreach (t; threads)
         t.join();
+    terminateWorkQueues();
+}
+
+shared struct Mutex {
+@trusted:
+nothrow:
+private:
+    shared Semaphore sem;
+    long     counter;
+
+    this(long cnt) {
+        sem = semaphore(0);
+        counter = cnt;
+    }
+
+    @disable this(this);
+public:
+    void lock() {
+        auto v = atomicFetchSub(counter, 1);
+        if (v <= 0) {
+            sem.wait();
+        }
+    }
+
+    void unlock() {
+        auto v = atomicFetchAdd(counter, 1);
+        if (v < 0) {
+            sem.trigger(1);
+        }
+    }
+
+    void dispose() {
+        sem.dispose();
+    }
+}
+
+/// Create non-recursive mutex
+auto mutex() {
+    return cast(shared)Mutex(1);
+}
+
+///
+version(Posix)
+unittest {
+    startloop();
+    auto mtx = mutex();
+    int counter = 0;
+    go({
+        foreach (_; 0..100) {
+            mtx.lock();
+            int c = counter;
+            delay(1.msecs);
+            counter = c + 1;
+            mtx.unlock();
+        }
+    });
+    go({
+        foreach (_; 0..100) {
+            mtx.lock();
+            int c = counter;
+            delay(1.msecs);
+            counter = c + 1;
+            mtx.unlock();
+        }
+    });
+    runFibers();
+    mtx.dispose();
+    assert(counter == 200);
+}
+
+struct RecursiveMutex {
+nothrow:
+@trusted:
+private:
+    shared Semaphore sem;
+    long counter;
+    FiberExt owner;
+    long recCount;
+    SpinLock splk;
+
+    this(long cnt) {
+        sem = semaphore(0);
+        counter = cnt;
+        recCount = 0;
+        splk = SpinLock(SpinLock.Contention.brief);
+    }
+
+    @disable this(this);
+public:
+    void lock() shared {
+        assert(currentFiber);
+        splk.lock();
+        if (owner is cast(shared)currentFiber) {
+            this.unshared.recCount++;
+            splk.unlock();
+            return;
+        }
+        auto v = this.unshared.counter--;
+        bool suspend;
+        if (v <= 0) {
+            suspend = true;
+        } else {
+            this.unshared.owner = currentFiber;
+            assert(this.recCount == 0);
+        }
+        splk.unlock();
+        if (suspend) {
+            sem.wait();
+            splk.lock();
+            this.unshared.owner = currentFiber;
+            assert(this.recCount == 0);
+            splk.unlock();
+        }
+    }
+
+    void unlock() shared {
+        assert(currentFiber);
+        splk.lock();
+        assert(owner is cast(shared)currentFiber);
+        if (this.unshared.recCount != 0) {
+            this.unshared.recCount--;
+            splk.unlock();
+            return;
+        } 
+        this.unshared.owner = null;
+        auto v = this.unshared.counter++;
+        bool notify;
+        if (v < 0) {
+            notify = true;
+        }
+        splk.unlock();
+        if (notify) {
+            sem.trigger(1);
+        }
+    }
+
+    void dispose() shared {
+        sem.dispose();
+    }
+}
+
+/// Create recursive mutex
+auto recursiveMutex() {
+    return cast(shared)RecursiveMutex(1);
+}
+
+version(Posix)
+unittest {
+    enum ITERS = 1000;
+    enum COUNT = 10;
+    enum LOCK_CNT = 3;
+    enum JOBS = 20;
+    static void testMutex(M, alias createM)(int iters, int count, int lockingTimes, int jobs) {
+        startloop();
+        auto mtxs = new shared(M)[count];
+        int[] counters = new int[count];
+        foreach (i; 0..count) {
+            mtxs[i] = createM();
+        }
+        shared size_t cnt = 0;
+        void task() {
+            foreach(_; 0..iters){
+                foreach (i; 0..count) {
+                    foreach (__; 0..lockingTimes)
+                        mtxs[i].lock();
+                    counters[i]++;
+                    foreach(__;0..lockingTimes)
+                        mtxs[i].unlock();
+                }
+            }
+        }
+        foreach(_; 0..jobs) {
+            go(&task);
+        }
+        runFibers();
+        foreach (i; 0..COUNT) {
+            assert(counters[i] == ITERS * JOBS);
+        }
+    }
+    testMutex!(Mutex, mutex)(ITERS, COUNT, 1, JOBS);
+    testMutex!(RecursiveMutex, recursiveMutex)(ITERS, COUNT, LOCK_CNT, JOBS);
+}
+
+version(Posix)
+public struct CondVar {
+private:
+    FiberExt waiters;
+    SpinLock splk;
+public:
+    void wait(M)(ref M mutex) shared {
+        assert(currentFiber !is null);
+        splk.lock();
+        mutex.unlock();
+        auto f = currentFiber;
+        if (waiters !is null) {
+            f.next = waiters;
+            f.back = waiters.back;
+            waiters.back = f;
+            waiters = f;
+        } else {
+            f.next = null;
+            f.back = null;
+            waiters = f;
+        }
+        splk.unlock();
+        FiberExt.yield();
+        mutex.lock();
+    }
+
+    void wait(M)(ref M mutex, Duration d) shared {
+        assert(currentFiber !is null);
+        splk.lock();
+        mutex.unlock();
+        auto f = currentFiber;
+        if (waiters !is null) {
+            f.next = waiters;
+            f.back = waiters.back;
+            waiters = f;
+        } else {
+            currentFiber.next = null;
+            currentFiber.back = null;
+        }
+        f.wakeFd = 0;
+        TimedFiber tf = timerEntry(f, d);
+        timerQueue.insert(tf);
+        splk.unlock();
+        FiberExt.yield();
+        if (f.wakeFd == TIMER_WAKE) {
+            splk.lock();
+            if (f == this.unshared.waiters) {
+                this.unshared.waiters = f.next;
+                if (this.unshared.waiters !is null) {
+                    waiters.prev = f.prev;
+                }
+            } else {
+                if (f.prev !is null) {
+                    f.prev.next = f.next;
+                }
+                if (f.next !is null) {
+                    f.next.prev = f.prev;
+                }
+            }
+            splk.unlock();
+        }
+        mutex.lock();
+    }
+
+    void signal() {
+        splk.lock();
+
+        splk.unlock();
+    }
 }
 
 /++
@@ -127,6 +376,7 @@ void runFibers()
     `OutputRange` and `InputRange` concepts.
 +/
 struct Channel(T) {
+@trusted:
 private:
     shared RingQueue!(T, Event)* buf_;
     shared T item_;
@@ -220,7 +470,7 @@ public:
 /++
     Create a new shared `Channel` with given capacity.
 +/
-auto channel(T)(size_t capacity = 1) {
+auto channel(T)(size_t capacity = 1) @safe {
     return cast(shared)Channel!T(capacity);
 }
 
@@ -246,7 +496,7 @@ unittest {
     Multiplex between multiple channels, executes a lambda attached to the first
     channel that becomes ready to read.
 +/
-void select(Args...)(auto ref Args args)
+void select(Args...)(auto ref Args args) @trusted
 if (allSatisfy!(isChannel, Even!Args) && allSatisfy!(isHandler, Odd!Args)) {
     void delegate()[args.length/2] handlers = void;
     Event*[args.length/2] events = void;
@@ -281,7 +531,7 @@ if (allSatisfy!(isChannel, Even!Args) && allSatisfy!(isHandler, Odd!Args)) {
 /// Trait for testing if a type is Channel
 enum isChannel(T) = is(T == Channel!(V), V);
 
-enum isHandler(T) = is(T == void delegate());
+enum isHandler(T) = is(T : void delegate());
 
 private template Even(T...) {
     static assert(T.length % 2 == 0);
@@ -454,6 +704,6 @@ private:
 
 
 /// Create generic pool for resources, open creates new resource, close releases the resource.
-auto pool(T)(size_t size, Duration maxIdle, T delegate() open, void delegate(ref T) close) {
+auto pool(T)(size_t size, Duration maxIdle, T delegate() open, void delegate(ref T) close) @trusted {
     return cast(shared) new Pool!T(size, maxIdle, open, close);
 }

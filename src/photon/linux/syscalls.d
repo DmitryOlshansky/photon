@@ -110,12 +110,12 @@ ssize_t raw_write(int fd, const void *buf, size_t count) nothrow
     return syscall(SYS_WRITE, fd, cast(size_t) buf, count);
 }
 
-ssize_t raw_poll(pollfd *fds, nfds_t nfds, int timeout)
+int raw_poll(pollfd *fds, nfds_t nfds, int timeout)
 {
     logf("Raw poll");
     timespec ts;
     ts.tv_sec = timeout/1000;
     ts.tv_nsec = (timeout % 1000) * 1000000;
-    return syscall(SYS_PPOLL, cast(size_t)fds, cast(size_t) nfds, timeout < 0 ? null : &ts, null);
+    return cast(int)syscall(SYS_PPOLL, cast(size_t)fds, cast(size_t) nfds, timeout < 0 ? null : &ts, null);
 }
 
