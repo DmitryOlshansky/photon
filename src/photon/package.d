@@ -257,6 +257,7 @@ public:
     }
 }
 
+/// Create recursive mutex
 auto recursiveMutex() {
     return cast(shared)RecursiveMutex(1);
 }
