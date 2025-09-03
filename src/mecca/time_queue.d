@@ -34,7 +34,7 @@ void DBG_ASSERT(string fmt, T...)(T args) {
 }
 
 void DEBUG(string fmt, T...)(T args) {
-    logf(fmt, args);
+    //logf(fmt, args);
 }
 
 void INFO(string fmt, T...)(T args) {

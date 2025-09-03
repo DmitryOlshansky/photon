@@ -88,6 +88,8 @@ nothrow @trusted:
 
     int fd() { return evfd; }
 
+    int fd() shared { return evfd; }
+
     @disable this(this);
 
     /// Wait for the event to be triggered, then reset and return atomically
@@ -156,6 +158,8 @@ nothrow @trusted:
 
     int fd() { return evfd; }
 
+    int fd() shared { return evfd; }
+
     @disable this(this);
 
     ///
@@ -165,6 +169,7 @@ nothrow @trusted:
         do {
             // go through event loop
             r = read(evfd, bytes.ptr, bytes.sizeof);
+            logf("READ SEM %d", r);
         } while (r < 0 && errno == EINTR);
     }
 
@@ -191,6 +196,7 @@ nothrow @trusted:
         ssize_t r;
         do {
             r = write(evfd, value.bytes.ptr, value.sizeof);
+            logf("WRITE SEM %d", r);
         } while(r < 0 && errno == EINTR);
     }
 
@@ -280,57 +286,44 @@ void processEventsEntry(size_t numSched, Duration timeout)
             auto descriptor = descriptors.ptr + fd;
             if (descriptor.state == DescriptorState.NONBLOCKING) {
                 if (events[n].events & EPOLLIN) {
+                    auto readers = &descriptor.readers;
+                    readers.lock();
                     logf("Read event for fd=%d", fd);
-                    auto state = descriptor.readerState;
+                    auto state = readers.state;
                     logf("read state = %d", state);
                     final switch(state) with(ReaderState) { 
                         case EMPTY:
-                            logf("Trying to schedule readers");
-                            descriptor.changeReader(EMPTY, READY);
-                            descriptor.scheduleReaders(fd, numSched);
-                            logf("Scheduled readers");
-                            break;
                         case UNCERTAIN:
-                            descriptor.changeReader(UNCERTAIN, READY);
-                            descriptor.scheduleReaders(fd, numSched);
-                            logf("Scheduled readers");
+                        case READY:
+                            readers.state = READY;
+                            readers.signal(numSched, fd);
                             break;
                         case READING:
-                            if (!descriptor.changeReader(READING, UNCERTAIN)) {
-                                if (descriptor.changeReader(EMPTY, UNCERTAIN)) // if became empty - move to UNCERTAIN and wake readers
-                                    descriptor.scheduleReaders(fd, numSched);
-                            }
-                            break;
-                        case READY:
-                            descriptor.scheduleReaders(fd, numSched);
+                        case READING_SIGNALED:
+                            readers.state = READING_SIGNALED;
+                            readers.unlock();
                             break;
                     }
-                    logf("Awaits %x", cast(void*)descriptor.readWaiters);
                 }
                 if (events[n].events & EPOLLOUT) {
                     logf("Write event for fd=%d", fd);
-                    auto state = descriptor.writerState;
+                    auto writers = &descriptor.writers;
+                    writers.lock();
+                    auto state = writers.state;
                     logf("write state = %d", state);
                     final switch(state) with(WriterState) { 
                         case FULL:
-                            descriptor.changeWriter(FULL, READY);
-                            descriptor.scheduleWriters(fd, numSched);
-                            break;
+                        case READY:
                         case UNCERTAIN:
-                            descriptor.changeWriter(UNCERTAIN, READY);
-                            descriptor.scheduleWriters(fd, numSched);
+                            writers.state = READY;
+                            writers.signal(numSched, fd);
                             break;
                         case WRITING:
-                            if (!descriptor.changeWriter(WRITING, UNCERTAIN)) {
-                                if (descriptor.changeWriter(FULL, UNCERTAIN)) // if became empty - move to UNCERTAIN and wake writers
-                                    descriptor.scheduleWriters(fd, numSched);
-                            }
-                            break;
-                        case READY:
-                            descriptor.scheduleWriters(fd, numSched);
+                        case WRITING_SIGNALED:
+                            writers.state = WRITING_SIGNALED;
+                            writers.unlock();
                             break;
                     }
-                    logf("Awaits %x", cast(void*)descriptor.writeWaiters);
                 }
             }
         }
@@ -373,18 +366,7 @@ void interceptFd(Fcntl needsFcntl)(int fd) nothrow {
             descriptors[fd].state = DescriptorState.NONBLOCKING;
         }
     }
-}
-
-void deregisterFd(int fd) nothrow {
-    if(fd >= 0 && fd < descriptors.length) {
-        auto descriptor = descriptors.ptr + fd;
-        atomicStore(descriptor._writerState, WriterState.READY);
-        atomicStore(descriptor._readerState, ReaderState.EMPTY);
-        size_t choice = currentFiber !is null ? currentFiber.numScheduler : size_t.max;
-        descriptor.scheduleReaders(fd, choice);
-        descriptor.scheduleWriters(fd, choice);
-        atomicStore(descriptor.state, DescriptorState.NOT_INITED);
-    }
+    while(descriptors[fd].state == DescriptorState.INITIALIZING) {}
 }
 
 // ======================================================================================

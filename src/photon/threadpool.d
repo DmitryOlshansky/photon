@@ -23,7 +23,7 @@ class WorkItem {
         else version(FreeBSD)
             fiber.schedule();
         else
-            fiber.schedule(size_t.max); // schedule from "remote scheduler"
+            fiber.schedule(size_t.max, WAKE_TRIGGER); // schedule from "remote scheduler"
     }
 
     FiberExt fiber; // if waking up fiber

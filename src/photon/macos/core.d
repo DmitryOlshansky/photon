@@ -381,17 +381,6 @@ void interceptFd(Fcntl needsFcntl)(int fd) nothrow {
     }
 }
 
-void deregisterFd(int fd) nothrow {
-    if(fd >= 0 && fd < descriptors.length) {
-        auto descriptor = descriptors.ptr + fd;
-        atomicStore(descriptor._writerState, WriterState.READY);
-        atomicStore(descriptor._readerState, ReaderState.EMPTY);
-        descriptor.scheduleReaders(fd, currentFiber is null ? size_t.max : currentFiber.numScheduler);
-        descriptor.scheduleWriters(fd, currentFiber is null ? size_t.max : currentFiber.numScheduler);
-        atomicStore(descriptor.state, DescriptorState.NOT_INITED);
-    }
-}
-
 int gettid()
 {
     return cast(int)__syscall(SYS_GETTID);
@@ -408,7 +397,7 @@ ssize_t raw_write(int fd, const void *buf, size_t count) nothrow
     return __syscall(SYS_WRITE, fd, cast(size_t) buf, count);
 }
 
-ssize_t raw_poll(pollfd *fds, nfds_t nfds, int timeout) nothrow
+int raw_poll(pollfd *fds, nfds_t nfds, int timeout) nothrow
 {
     logf("Raw poll");
     return __syscall(SYS_POLL, cast(size_t)fds, cast(size_t) nfds, timeout);

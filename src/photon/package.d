@@ -122,29 +122,29 @@ void runFibers() @trusted
 shared struct Mutex {
 @trusted:
 nothrow:
-private:
+//private:
     Semaphore sem;
     long     counter;
 
     this(long cnt) {
-        sem = semaphore(1);
+        sem = semaphore(0);
         counter = cnt;
     }
 
     @disable this(this);
 public:
     void lock() {
-        /*auto v = atomicFetchSub(counter, 1);
-        if (v <= 0) {*/
+        auto v = atomicFetchSub(counter, 1);
+        if (v <= 0) {
             sem.wait();
-        //}
+        }
     }
 
     void unlock() {
-        /*auto v = atomicFetchAdd(counter, 1);
-        if (v <= 0) {*/
+        auto v = atomicFetchAdd(counter, 1);
+        if (v < 0) {
             sem.trigger(1);
-        //}
+        }
     }
 
     void dispose() {
@@ -242,7 +242,7 @@ public:
         this.unshared.owner = null;
         auto v = this.unshared.counter++;
         bool notify;
-        if (v <= 0) {
+        if (v < 0) {
             notify = true;
         }
         splk.unlock();
@@ -261,34 +261,39 @@ auto recursiveMutex() {
 }
 
 unittest {
-    enum ITERS = 100;
+    enum ITERS = 1000;
     enum COUNT = 10;
-    enum LOCK_CNT = 1;
-    enum JOBS = 10;
-    startloop();
-    auto mtxs = new shared(Mutex)[COUNT];
-    int[] counters = new int[COUNT];
-    foreach (i; 0..COUNT) {
-        mtxs[i] = mutex();
-    }
-    void task() {
-        foreach(_; 0..ITERS){
-            foreach (i; 0..COUNT) {
-                foreach (__; 0..LOCK_CNT)
-                    mtxs[i].lock();
-                counters[i]++;
-                foreach(__;0..LOCK_CNT)
-                    mtxs[i].unlock();
+    enum LOCK_CNT = 3;
+    enum JOBS = 20;
+    static void testMutex(M, alias createM)(int iters, int count, int lockingTimes, int jobs) {
+        startloop();
+        auto mtxs = new shared(M)[count];
+        int[] counters = new int[count];
+        foreach (i; 0..count) {
+            mtxs[i] = createM();
+        }
+        shared size_t cnt = 0;
+        void task() {
+            foreach(_; 0..iters){
+                foreach (i; 0..count) {
+                    foreach (__; 0..lockingTimes)
+                        mtxs[i].lock();
+                    counters[i]++;
+                    foreach(__;0..lockingTimes)
+                        mtxs[i].unlock();
+                }
             }
         }
+        foreach(_; 0..jobs) {
+            go(&task);
+        }
+        runFibers();
+        foreach (i; 0..COUNT) {
+            assert(counters[i] == ITERS * JOBS);
+        }
     }
-    foreach(_; 0..JOBS) {
-        go(&task);
-    }
-    runFibers();
-    foreach (i; 0..COUNT) {
-        assert(counters[i] == ITERS);
-    }
+    testMutex!(Mutex, mutex)(ITERS, COUNT, 1, JOBS);
+    testMutex!(RecursiveMutex, recursiveMutex)(ITERS, COUNT, LOCK_CNT, JOBS);
 }
 
 version(Posix)
