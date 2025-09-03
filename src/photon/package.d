@@ -260,6 +260,7 @@ auto recursiveMutex() {
     return cast(shared)RecursiveMutex(1);
 }
 
+version(Posix)
 unittest {
     enum ITERS = 1000;
     enum COUNT = 10;
