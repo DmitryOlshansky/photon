@@ -747,7 +747,7 @@ extern(C) private int poll(pollfd *fds, nfds_t nfds, int timeout)
                 d.readers.lock();
                 d.readers.register(&waiters[j++]);
             }
-            else if(fds[i].events & POLLOUT) {
+            if(fds[i].events & POLLOUT) {
                 d.writers.lock();
                 d.writers.register(&waiters[j++]);
             }
@@ -769,11 +769,11 @@ extern(C) private int poll(pollfd *fds, nfds_t nfds, int timeout)
             auto d = &descriptors[fds[i].fd];
             if (fds[i].events & POLLIN) {
                 d.readers.lock();
-                d.readers.unregister(&waiters[j]);
+                d.readers.unregister(&waiters[j++]);
             }
-            else if(fds[i].events & POLLOUT) {
+            if(fds[i].events & POLLOUT) {
                 d.writers.lock();
-                d.writers.unregister(&waiters[j]);
+                d.writers.unregister(&waiters[j++]);
             }
         }
         logf("Woke up after select %x. WakeFD=%d", cast(void*)currentFiber, currentFiber.wakeFd);
@@ -782,16 +782,6 @@ extern(C) private int poll(pollfd *fds, nfds_t nfds, int timeout)
             nonBlockingCheck(result, 0);
             return result;
         }
-    }
-}
-
-extern(C) private int nanosleep(const timespec* req, const timespec* rem) {
-    if (currentFiber !is null) {
-        delay(req);
-        return 0;
-    } else {
-        __syscall(SYS_NANOSLEEP, req, rem);
-        return 0;
     }
 }
 

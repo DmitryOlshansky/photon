@@ -35,6 +35,7 @@ import core.memory;
 import core.sys.posix.sys.mman;
 import core.sys.posix.pthread;
 import core.sys.darwin.sys.event;
+import core.sys.darwin.dlfcn;
 import core.sys.darwin.mach.thread_act;
 
 import photon.macos.support;
@@ -49,7 +50,6 @@ enum SYS_CONNECT = 98;
 enum SYS_SENDTO = 133;
 enum SYS_RECVFROM = 29;
 enum SYS_CLOSE = 6;
-enum SYS_NANOSLEEP = 334;
 enum SYS_GETTID = 286;
 enum SYS_POLL = 230;
 
@@ -373,6 +373,21 @@ void interceptFd(Fcntl needsFcntl)(int fd) nothrow {
 int gettid()
 {
     return cast(int)__syscall(SYS_GETTID);
+}
+
+alias Nanosleep = int function(const timespec* req, timespec* rem);
+Nanosleep nanosleepPtr;
+
+extern(C) private int nanosleep(const timespec* req, timespec* rem) {
+    if (currentFiber !is null) {
+        delay(req);
+        return 0;
+    } else {
+        if (nanosleepPtr == null) {
+            nanosleepPtr = cast(Nanosleep)dlsym(RTLD_NEXT, "nanosleep");
+        }
+        return nanosleepPtr(req, rem);
+    }
 }
 
 ssize_t raw_read(int fd, void *buf, size_t count) nothrow {

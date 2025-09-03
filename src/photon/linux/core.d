@@ -374,6 +374,16 @@ void interceptFd(Fcntl needsFcntl)(int fd) nothrow {
 // ======================================================================================
 nothrow:
 
+extern(C) private int nanosleep(const timespec* req, timespec* rem) {
+    if (currentFiber !is null) {
+        delay(req);
+        return 0;
+    } else {
+        __syscall(SYS_NANOSLEEP, req, rem);
+        return 0;
+    }
+}
+
 extern(C) ssize_t accept4(int sockfd, sockaddr *addr, socklen_t *addrlen, int flags)
 {
     return universalSyscall!(SYS_ACCEPT4, "accept4", SyscallKind.accept, Fcntl.sock, EWOULDBLOCK)
