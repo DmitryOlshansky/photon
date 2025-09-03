@@ -18,7 +18,7 @@ extern(Windows) SOCKET WSASocketW(
   void*              lpProtocolInfo,
   WORD               g,
   DWORD              dwFlags
-);
+) nothrow;
 
 // hackish, we do not use LPCONDITIONPROC
 alias LPCONDITIONPROC = void*;
@@ -30,7 +30,7 @@ extern(Windows) SOCKET WSAAccept(
   LPINT           addrlen,
   LPCONDITIONPROC lpfnCondition,
   DWORD_PTR       dwCallbackData
-);
+) nothrow;
 
 extern(Windows) int WSARecv(
   SOCKET                             s,
@@ -40,7 +40,7 @@ extern(Windows) int WSARecv(
   LPDWORD                            lpFlags,
   LPWSAOVERLAPPED                    lpOverlapped,
   LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine
-);
+) nothrow;
 
 extern(Windows) int WSASend(
   SOCKET                             s,
@@ -50,7 +50,7 @@ extern(Windows) int WSASend(
   DWORD                              dwFlags,
   LPWSAOVERLAPPED                    lpOverlapped,
   LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine
-);
+) nothrow;
 
 struct OVERLAPPED_ENTRY {
   ULONG_PTR    lpCompletionKey;
@@ -68,7 +68,7 @@ extern(Windows) BOOL GetQueuedCompletionStatusEx(
   PULONG             ulNumEntriesRemoved,
   DWORD              dwMilliseconds,
   BOOL               fAlertable
-);
+) nothrow;
 
 enum WSA_FLAG_OVERLAPPED  =  0x01;
 
@@ -78,17 +78,17 @@ alias PTP_POOL = TP_POOL*;
 
 extern(Windows) PTP_POOL CreateThreadpool(
   PVOID reserved
-);
+) nothrow;
 
 extern(Windows) void SetThreadpoolThreadMaximum(
   PTP_POOL ptpp,
   DWORD    cthrdMost
-);
+) nothrow;
 
 extern(Windows) BOOL SetThreadpoolThreadMinimum(
   PTP_POOL ptpp,
   DWORD    cthrdMic
-);
+) nothrow;
 
 alias TP_VERSION = DWORD;
 alias PTP_VERSION = TP_VERSION*;
@@ -135,7 +135,7 @@ struct TP_CALLBACK_ENVIRON_V3 {
 alias TP_CALLBACK_ENVIRON = TP_CALLBACK_ENVIRON_V3;
 alias PTP_CALLBACK_ENVIRON = TP_CALLBACK_ENVIRON*;
 
-VOID InitializeThreadpoolEnvironment(PTP_CALLBACK_ENVIRON cbe) {
+VOID InitializeThreadpoolEnvironment(PTP_CALLBACK_ENVIRON cbe) nothrow {
   cbe.Pool = NULL;
   cbe.CleanupGroup = NULL;
   cbe.CleanupGroupCancelCallback = NULL;
@@ -150,10 +150,10 @@ VOID InitializeThreadpoolEnvironment(PTP_CALLBACK_ENVIRON cbe) {
 
 extern(Windows) void CloseThreadpool(
   PTP_POOL ptpp
-);
+) nothrow;
 
 // inline "function"
-VOID SetThreadpoolCallbackPool(PTP_CALLBACK_ENVIRON cbe, PTP_POOL pool) { cbe.Pool = pool; }
+VOID SetThreadpoolCallbackPool(PTP_CALLBACK_ENVIRON cbe, PTP_POOL pool) nothrow { cbe.Pool = pool; }
 
 struct TP_WORK;
 alias PTP_WORK = TP_WORK*;
@@ -174,47 +174,47 @@ extern(Windows) PTP_WORK CreateThreadpoolWork(
   PTP_WORK_CALLBACK    pfnwk,
   PVOID                pv,
   PTP_CALLBACK_ENVIRON pcbe
-);
+) nothrow;
 
-extern(Windows) PTP_WAIT CreateThreadpoolWait(PTP_WAIT_CALLBACK pfnwa, PVOID pv, PTP_CALLBACK_ENVIRON pcbe);
+extern(Windows) PTP_WAIT CreateThreadpoolWait(PTP_WAIT_CALLBACK pfnwa, PVOID pv, PTP_CALLBACK_ENVIRON pcbe) nothrow;
 
 extern(Windows) void SubmitThreadpoolWork(
   PTP_WORK pwk
-);
+) nothrow;
 
 extern(Windows) void CloseThreadpoolWork(
   PTP_WORK pwk
-);
+) nothrow;
 
 extern(Windows) void SetThreadpoolWait(
   PTP_WAIT  pwa,
   HANDLE    h,
   PFILETIME pftTimeout
-);
+) nothrow;
 
 extern(Windows) void CloseThreadpoolWait(
   PTP_WAIT pwa
-);
+) nothrow;
 
 extern(Windows) PTP_TIMER CreateThreadpoolTimer(
   PTP_TIMER_CALLBACK   pfnti,
   PVOID                pv,
   PTP_CALLBACK_ENVIRON pcbe
-);
+) nothrow;
 
 extern(Windows) void SetThreadpoolTimer(
   PTP_TIMER pti,
   PFILETIME pftDueTime,
   DWORD     msPeriod,
   DWORD     msWindowLength
-);
+) nothrow;
 
 extern(Windows) void CloseThreadpoolTimer(
   PTP_TIMER pti
-);
+) nothrow;
 
 
-void outputToConsole(const(wchar)[] msg)
+void outputToConsole(const(wchar)[] msg) nothrow
 {
     HANDLE output = GetStdHandle(STD_OUTPUT_HANDLE);
     uint size = cast(uint)msg.length;
@@ -232,10 +232,12 @@ void logf(T...)(const(wchar)[] fmt, T args)
     }
 }
 
-void checked(bool arg, string msg) {
+void checked(bool arg, string msg) nothrow {
   if (!arg) {
-      formattedWrite(&outputToConsole, msg);
-      formattedWrite(&outputToConsole, "\n");
+      try {
+          formattedWrite(&outputToConsole, msg);
+          formattedWrite(&outputToConsole, "\n");
+      } catch (Throwable t) {}
       abort();
   }
 }
