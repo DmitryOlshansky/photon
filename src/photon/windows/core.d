@@ -303,6 +303,10 @@ class FiberExt : Fiber {
     {
         scheds[numScheduler].queue.push(this);
     }
+
+    void join() {
+        assert(false);
+    }
 }
 
 package(photon) shared SchedulerBlock[] scheds;
