@@ -306,7 +306,7 @@ void processEventsEntry(size_t n, Duration timeout)
                 case UNCERTAIN:
                 case READY:
                     readers.state = READY;
-                    readers.signal(numSched, fd);
+                    readers.signal(n, fd);
                     break;
                 case READING:
                 case READING_SIGNALED:
@@ -326,7 +326,7 @@ void processEventsEntry(size_t n, Duration timeout)
                 case READY:
                 case UNCERTAIN:
                     writers.state = READY;
-                    writers.signal(numSched, fd);
+                    writers.signal(n, fd);
                     break;
                 case WRITING:
                 case WRITING_SIGNALED:

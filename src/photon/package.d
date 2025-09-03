@@ -122,8 +122,8 @@ void runFibers() @trusted
 shared struct Mutex {
 @trusted:
 nothrow:
-//private:
-    Semaphore sem;
+private:
+    shared Semaphore sem;
     long     counter;
 
     this(long cnt) {
@@ -189,7 +189,7 @@ struct RecursiveMutex {
 nothrow:
 @trusted:
 private:
-    Semaphore sem;
+    shared Semaphore sem;
     long counter;
     FiberExt owner;
     long recCount;

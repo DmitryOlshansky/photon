@@ -3,6 +3,7 @@ version(Windows):
 import core.sys.windows.core;
 import core.sys.windows.winsock2;
 import std.format;
+import core.stdc.stdlib;
 
 struct WSABUF 
 {
@@ -229,5 +230,13 @@ void logf(T...)(const(wchar)[] fmt, T args)
     catch (Exception e) {
         outputToConsole("ARGH!"w);
     }
+}
+
+void checked(bool arg, string msg) {
+  if (!arg) {
+      formattedWrite(&outputToConsole, msg);
+      formattedWrite(&outputToConsole, "\n");
+      abort();
+  }
 }
 

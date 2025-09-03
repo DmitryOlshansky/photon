@@ -66,8 +66,6 @@ struct AwaitingFiber {
 
 class FiberExt : Fiber { 
     FiberExt next;
-    FiberExt yield_next;
-    int code = -1;
     uint numScheduler;
     int wakeFd; // recieves fd that woken us up
     ThreadInfo tidInfo;
