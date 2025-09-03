@@ -86,9 +86,9 @@ nothrow @trusted:
         interceptFd!(Fcntl.noop)(evfd);
     }
 
-    int fd() { return evfd; }
+    package(photon) int fd() { return evfd; }
 
-    int fd() shared { return evfd; }
+    package(photon) int fd() shared { return evfd; }
 
     @disable this(this);
 
