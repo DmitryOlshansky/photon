@@ -389,5 +389,5 @@ ssize_t raw_write(int fd, const void *buf, size_t count) nothrow
 int raw_poll(pollfd *fds, nfds_t nfds, int timeout) nothrow
 {
     logf("Raw poll");
-    return __syscall(SYS_POLL, cast(size_t)fds, cast(size_t) nfds, timeout);
+    return cast(int)__syscall(SYS_POLL, cast(size_t)fds, cast(size_t) nfds, timeout);
 }
