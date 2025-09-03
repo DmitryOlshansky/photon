@@ -296,55 +296,44 @@ void processEventsEntry(size_t n, Duration timeout)
         auto filter = ke[i].filter;
         auto descriptor = descriptors.ptr + fd;
         if (filter == EVFILT_READ) {
+            auto readers = &descriptor.readers;
+            readers.lock();
             logf("Read event for fd=%d", fd);
-            auto state = descriptor.readerState;
-            logf("read state = %d", state);                
-            final switch(descriptor.readerState) with(ReaderState) {
+            auto state = readers.state;
+            logf("read state = %d", state);
+            final switch(state) with(ReaderState) { 
                 case EMPTY:
-                    logf("Trying to schedule readers");
-                    descriptor.changeReader(EMPTY, READY);
-                    descriptor.scheduleReaders(fd, n);
-                    logf("Scheduled readers");
-                    break;
                 case UNCERTAIN:
-                    descriptor.changeReader(UNCERTAIN, READY);
-                    descriptor.scheduleReaders(fd, n);
+                case READY:
+                    readers.state = READY;
+                    readers.signal(numSched, fd);
                     break;
                 case READING:
-                    if (!descriptor.changeReader(READING, UNCERTAIN)) {
-                        if (descriptor.changeReader(EMPTY, UNCERTAIN)) // if became empty - move to UNCERTAIN and wake readers
-                            descriptor.scheduleReaders(fd, n);
-                    }
-                    break;
-                case READY:
-                    descriptor.scheduleReaders(fd, n);
+                case READING_SIGNALED:
+                    readers.state = READING_SIGNALED;
+                    readers.unlock();
                     break;
             }
         }
         if (filter == EVFILT_WRITE) {
             logf("Write event for fd=%d", fd);
-            auto state = descriptor.writerState;
+            auto writers = &descriptor.writers;
+            writers.lock();
+            auto state = writers.state;
             logf("write state = %d", state);
             final switch(state) with(WriterState) { 
                 case FULL:
-                    descriptor.changeWriter(FULL, READY);
-                    descriptor.scheduleWriters(fd, n);
-                    break;
+                case READY:
                 case UNCERTAIN:
-                    descriptor.changeWriter(UNCERTAIN, READY);
-                    descriptor.scheduleWriters(fd, n);
+                    writers.state = READY;
+                    writers.signal(numSched, fd);
                     break;
                 case WRITING:
-                    if (!descriptor.changeWriter(WRITING, UNCERTAIN)) {
-                        if (descriptor.changeWriter(FULL, UNCERTAIN)) // if became full - move to UNCERTAIN and wake writers
-                            descriptor.scheduleWriters(fd, n);
-                    }
-                    break;
-                case READY:
-                    descriptor.scheduleWriters(fd, n);
+                case WRITING_SIGNALED:
+                    writers.state = WRITING_SIGNALED;
+                    writers.unlock();
                     break;
             }
-            logf("Awaits %x", cast(void*)descriptor.writeWaiters);
         }
         if (filter == EVFILT_USER) {
             logf("USER event %s", ke[i].ident);
