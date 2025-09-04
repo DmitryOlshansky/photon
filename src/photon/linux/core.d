@@ -255,6 +255,9 @@ public void startloop() nothrow @trusted
     ssize_t size = ((fdMax * Descriptor.sizeof) + pageSize-1) & ~(pageSize-1);
     descriptors = (cast(shared(Descriptor*)) mmap(null, size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0))[0..fdMax];
     checked(cast(ssize_t)descriptors.ptr, "mmap failed");
+    size = ((fdMax * DescriptorState.sizeof) + pageSize-1) & ~(pageSize-1);
+    descriptorStates = (cast(shared(DescriptorState*)) mmap(null, size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0))[0..fdMax];
+    checked(cast(ssize_t)descriptorStates.ptr, "mmap failed");
     scheds = new SchedulerBlock[threads];
     foreach(ref sched; scheds) {
         sched.queue = IntrusiveQueue!(FiberExt, RawEvent)(RawEvent(0));
@@ -284,7 +287,7 @@ void processEventsEntry(size_t numSched, Duration timeout)
         }
         else {
             auto descriptor = descriptors.ptr + fd;
-            if (descriptor.state == DescriptorState.NONBLOCKING) {
+            if (descriptorStates[fd] == DescriptorState.NONBLOCKING) {
                 if (events[n].events & EPOLLIN) {
                     auto readers = &descriptor.readers;
                     readers.lock();
@@ -346,7 +349,7 @@ enum SyscallKind { accept, read, write, connect }
 void interceptFd(Fcntl needsFcntl)(int fd) nothrow {
     logf("Hit interceptFD");
     if (fd < 0 || fd >= descriptors.length) return;
-    if (cas(&descriptors[fd].state, DescriptorState.NOT_INITED, DescriptorState.INITIALIZING)) {
+    if (cas(&descriptorStates[fd], DescriptorState.NOT_INITED, DescriptorState.INITIALIZING)) {
         logf("First use, registering fd = %s", fd);
         static if(needsFcntl == Fcntl.explicit) {
             int flags = fcntl(fd, F_GETFL, 0);
@@ -359,14 +362,14 @@ void interceptFd(Fcntl needsFcntl)(int fd) nothrow {
         size_t n = currentFiber !is null ? currentFiber.numScheduler : 0;
         if (epoll_ctl(scheds[n].event_loop, EPOLL_CTL_ADD, fd, &event) < 0 && errno == EPERM) {
             logf("isSocket = false FD = %s", fd);
-            descriptors[fd].state = DescriptorState.THREADPOOL;
+            descriptorStates[fd] = DescriptorState.THREADPOOL;
         }
         else {
             logf("isSocket = true FD = %s", fd);
-            descriptors[fd].state = DescriptorState.NONBLOCKING;
+            descriptorStates[fd] = DescriptorState.NONBLOCKING;
         }
     }
-    while(descriptors[fd].state == DescriptorState.INITIALIZING) {}
+    while(descriptorStates[fd] == DescriptorState.INITIALIZING) {}
 }
 
 // ======================================================================================

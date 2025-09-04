@@ -158,7 +158,7 @@ enum DescriptorState: uint {
     THREADPOOL
 }
 
-struct FdWaiters(T, bool trace=false) {
+struct FdWaiters(T) {
     private LinkedList!(AwaitingFiber*, "next", "prev") waiters;
     T state;
     private SpinLock splk;
@@ -210,9 +210,9 @@ nothrow:
 // list of awaiting fibers
 shared struct Descriptor {
     FdWaiters!ReaderState readers;
-    FdWaiters!(WriterState, true) writers;
-    DescriptorState state;
+    FdWaiters!WriterState writers;
 }
+static assert (Descriptor.sizeof == 64);
 
 enum TIMER_NUM_BINS = 256;
 enum TIMER_NUM_LEVELS = 4;
@@ -226,6 +226,7 @@ FiberExt currentFiber;
 shared int alive; // count of non-terminated Fibers
 shared SchedulerBlock[] scheds; // per core scheduler data, notably run queue
 shared Descriptor[] descriptors;
+shared DescriptorState[] descriptorStates;
 
 CascadingTimeQueue!(TimedFiber*, TIMER_NUM_BINS, TIMER_NUM_LEVELS, true) timeQueue; // thread-local
 
@@ -400,6 +401,26 @@ if (isAwaitable!(Awaitable)) {
     assert(0);
 }
 
+ssize_t syscallOffload(T...)(size_t ident, int fd, T args) nothrow {
+    pragma(inline, false);
+    auto result = offload(() {
+        auto ret = __syscall(ident, fd, args);
+        if (ret < 0) {
+            return -errno;
+        }
+        else {
+            return ret;
+        }
+    });
+    if (result < 0) {
+        errno = cast(int)-result;
+        return -1;
+    }
+    else {
+        return result;
+    }
+}
+
 ssize_t universalSyscall(size_t ident, string name, SyscallKind kind, Fcntl fcntlStyle, ssize_t ERR, T...)
                         (int fd, T args) nothrow {
     if (currentFiber is null) {
@@ -410,24 +431,9 @@ ssize_t universalSyscall(size_t ident, string name, SyscallKind kind, Fcntl fcnt
         logf("HOOKED %s FD=%d", name, fd);
         interceptFd!(fcntlStyle)(fd);
         shared(Descriptor)* descriptor = descriptors.ptr + fd;
-        if (atomicLoad(descriptor.state) == DescriptorState.THREADPOOL) {
+        if (atomicLoad(descriptorStates[fd]) == DescriptorState.THREADPOOL) {
             logf("%s syscall THREADPOLL FD=%d", name, fd);
-            auto result = offload(() {
-                auto ret = __syscall(ident, fd, args);
-                if (ret < 0) {
-                    return -errno;
-                }
-                else {
-                    return ret;
-                }
-            });
-            if (result < 0) {
-                errno = cast(int)-result;
-                return -1;
-            }
-            else {
-                return result;
-            }
+            return syscallOffload(ident, fd, args);
         }
     L_start:
         FiberExt fiber = currentFiber;
@@ -578,7 +584,7 @@ void deregisterFd(int fd) nothrow {
         descriptor.writers.lock();
         descriptor.writers.state = WriterState.READY;
         descriptor.writers.broadcast(choice, fd);
-        atomicStore(descriptor.state, DescriptorState.NOT_INITED);
+        atomicStore(descriptorStates[fd], DescriptorState.NOT_INITED);
     }
 }
 
@@ -617,6 +623,12 @@ extern(C) ssize_t sendto(int sockfd, const void *buf, size_t len, int flags,
 {
     return universalSyscall!(SYS_SENDTO, "sendto", SyscallKind.write, Fcntl.explicit, EWOULDBLOCK)
         (sockfd, cast(size_t) buf, len, flags, cast(size_t) dest_addr, cast(size_t) addrlen);
+}
+
+extern(C) ssize_t send(int sockfd, const void *buf, size_t len, int flags)
+{
+    return universalSyscall!(SYS_SENDTO, "sendto", SyscallKind.write, Fcntl.explicit, EWOULDBLOCK)
+        (sockfd, cast(size_t) buf, len, flags, null, 0);
 }
 
 extern(C) ssize_t recv(int sockfd, void *buf, size_t len, int flags) nothrow {
