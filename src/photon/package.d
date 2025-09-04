@@ -133,20 +133,21 @@ private:
 
     @disable this(this);
 public:
+    ///
     void lock() {
         auto v = atomicFetchSub(counter, 1);
         if (v <= 0) {
             sem.wait();
         }
     }
-
+    ///
     void unlock() {
         auto v = atomicFetchAdd(counter, 1);
         if (v < 0) {
             sem.trigger(1);
         }
     }
-
+    ///
     void dispose() {
         sem.dispose();
     }
@@ -186,6 +187,7 @@ unittest {
     assert(counter == 200);
 }
 
+///
 struct RecursiveMutex {
 nothrow:
 @trusted:
@@ -205,6 +207,7 @@ private:
 
     @disable this(this);
 public:
+    ///
     void lock() shared {
         assert(currentFiber);
         splk.lock();
@@ -231,6 +234,7 @@ public:
         }
     }
 
+    ///
     void unlock() shared {
         assert(currentFiber);
         splk.lock();
@@ -251,7 +255,7 @@ public:
             sem.trigger(1);
         }
     }
-
+    ///
     void dispose() shared {
         sem.dispose();
     }
