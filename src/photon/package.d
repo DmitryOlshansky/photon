@@ -381,74 +381,144 @@ unittest {
 }
 
 version(Posix)
-public struct CondVar {
+public struct Condition {
 private:
-    FiberExt waiters;
+    alias Waiters = LinkedList!(AwaitingFiber*, "next", "prev");
+    Waiters waiters;
     SpinLock splk;
 public:
+    ///
     void wait(M)(ref M mutex) shared {
         assert(currentFiber !is null);
         splk.lock();
         mutex.unlock();
         auto f = currentFiber;
-        if (waiters !is null) {
-            f.next = waiters;
-            f.back = waiters.back;
-            waiters.back = f;
-            waiters = f;
-        } else {
-            f.next = null;
-            f.back = null;
-            waiters = f;
-        }
+        auto await = AwaitingFiber(cast(shared)&currentFiber);
+        this.unshared.waiters.append(&await);
         splk.unlock();
         FiberExt.yield();
         mutex.lock();
     }
 
+    ///
     void wait(M)(ref M mutex, Duration d) shared {
         assert(currentFiber !is null);
         splk.lock();
         mutex.unlock();
         auto f = currentFiber;
-        if (waiters !is null) {
-            f.next = waiters;
-            f.back = waiters.back;
-            waiters = f;
-        } else {
-            currentFiber.next = null;
-            currentFiber.back = null;
-        }
-        f.wakeFd = 0;
-        TimedFiber tf = timerEntry(f, d);
-        timerQueue.insert(tf);
+        AwaitingFiber await = AwaitingFiber(cast(shared)&f);
+        this.unshared.waiters.append(&await);
+        TimedFiber tm = timerEntry(&f, d);
+        timeQueue.insert(&tm);
         splk.unlock();
         FiberExt.yield();
-        if (f.wakeFd == TIMER_WAKE) {
+        if (currentFiber.wakeFd == WAKE_TIMER) {
             splk.lock();
-            if (f == this.unshared.waiters) {
-                this.unshared.waiters = f.next;
-                if (this.unshared.waiters !is null) {
-                    waiters.prev = f.prev;
-                }
-            } else {
-                if (f.prev !is null) {
-                    f.prev.next = f.next;
-                }
-                if (f.next !is null) {
-                    f.next.prev = f.prev;
-                }
-            }
+            this.unshared.waiters.remove(&await);
             splk.unlock();
+        } else {
+            timeQueue.cancel(&tm);
         }
         mutex.lock();
     }
 
-    void signal() {
+    ///
+    void signal() shared {
+        assert(currentFiber !is null);
         splk.lock();
-
+        AwaitingFiber* waiter;
+        if (!this.unshared.waiters.empty) {
+            waiter = this.unshared.waiters.popHead();
+        }
         splk.unlock();
+        if (waiter) {
+            waiter.schedule(currentFiber.numScheduler, WAKE_TRIGGER);
+        }
     }
+
+    ///
+    void broadcast() shared {
+        assert(currentFiber !is null);
+        splk.lock();
+        Waiters list = this.unshared.waiters;
+        this.unshared.waiters = Waiters.init;
+        splk.unlock();
+        while (!list.empty) {
+            AwaitingFiber* waiter = list.popHead();
+            waiter.schedule(currentFiber.numScheduler, WAKE_TRIGGER);
+        }
+    }
+}
+
+/// Create a conditional variable
+auto condition() {
+    return cast(shared)Condition.init;
+}
+
+version(Posix)
+unittest {
+    void simpleCondTest(alias signal, alias wait)() {
+        startloop();
+        auto cond = condition();
+        auto mtx = mutex();
+        int counter = 0;
+        enum MAX = 10000;
+        go({
+            for (;;) {
+                mtx.lock();
+                while (counter % 2 != 0) {
+                    wait(cond, mtx);
+                }
+                counter++;
+                if (counter >= MAX) {
+                    mtx.unlock();
+                    signal(cond);
+                    break;
+                }
+                mtx.unlock();
+                signal(cond);
+            }
+        });
+        go({
+            for (;;) {
+                mtx.lock();
+                while (counter % 2 != 1) {
+                    wait(cond, mtx);
+                }
+                counter++;
+                if (counter >= MAX) {
+                    mtx.unlock();
+                    signal(cond);
+                    break;
+                }
+                mtx.unlock();
+                signal(cond);
+            }
+        });
+        runFibers();
+        mtx.dispose();
+        assert(counter == MAX + 1);
+    }
+    simpleCondTest!((ref cnd) => cnd.signal(), (ref cnd, ref mtx) => cnd.wait(mtx));
+    simpleCondTest!((ref cnd) => cnd.signal(), (ref cnd, ref mtx) => cnd.wait(mtx, 100.msecs));
+    simpleCondTest!((ref cnd) => cnd.broadcast(), (ref cnd, ref mtx) => cnd.wait(mtx));
+    simpleCondTest!((ref cnd) => cnd.broadcast(), (ref cnd, ref mtx) => cnd.wait(mtx, 100.msecs));
+}
+
+version(Posix)
+unittest {
+    startloop();
+    auto cond = condition();
+    auto mtx = mutex();
+    go({
+        mtx.lock();
+        auto s = MonoTime.currTime;
+        cond.wait(mtx, 10.msecs);
+        auto s2 = MonoTime.currTime;
+        assert((s2 - s).total!"msecs" >= 10);
+        mtx.unlock();
+    });
+    runFibers();
 }
 
 /++
