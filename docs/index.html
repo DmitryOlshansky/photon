@@ -595,6 +595,38 @@
   <li class="ddoc_member">
   <div class="ddoc_member_header">
   <div class="ddoc_header_anchor">
+  <a href="#Task" id="Task"><code class="code">Task</code></a>
+</div>
+</div><div class="ddoc_decl">
+  <section class="section">
+    <div class="declaration">
+      <h4>Declaration</h4>
+      <div class="dlang">
+        <p class="para">
+          <code class="code">
+            <span class="ddoc_anchor" id="Task"></span>struct <code class="code">Task</code>;
+
+          </code>
+        </p>
+      </div>
+    </div>
+  </section>
+</div>
+<div class="ddoc_decl">
+  <section class="section ddoc_sections">
+  <div class="ddoc_summary">
+  <p class="para">
+    <code class="code">Task</code> result allows one fiber to wait on the other by joining the execution.
+  </p>
+</div>
+
+</section>
+
+</div>
+
+</li><li class="ddoc_member">
+  <div class="ddoc_member_header">
+  <div class="ddoc_header_anchor">
   <a href="#startloop" id="startloop"><code class="code">startloop</code></a>
 </div>
 </div><div class="ddoc_decl">
@@ -604,7 +636,7 @@
       <div class="dlang">
         <p class="para">
           <code class="code">
-            <span class="ddoc_anchor" id="startloop"></span>void <code class="code">startloop</code>();
+            <span class="ddoc_anchor" id="startloop"></span>nothrow @trusted Task <code class="code">startloop</code>();
 
           </code>
         </p>
@@ -636,9 +668,9 @@
       <div class="dlang">
         <p class="para">
           <code class="code">
-            <span class="ddoc_anchor" id="go"></span>void <code class="code">go</code>(void delegate() <code class="code">func</code>);
+            <span class="ddoc_anchor" id="go"></span>@trusted Task <code class="code">go</code>(void delegate() <code class="code">func</code>);
 <br>
-void <code class="code">go</code>(void function() <code class="code">func</code>);
+@safe Task <code class="code">go</code>(void function() <code class="code">func</code>);
 
           </code>
         </p>
@@ -670,9 +702,9 @@ void <code class="code">go</code>(void function() <code class="code">func</code>
       <div class="dlang">
         <p class="para">
           <code class="code">
-            <span class="ddoc_anchor" id="goOnSameThread"></span>void <code class="code">goOnSameThread</code>(void delegate() <code class="code">func</code>);
+            <span class="ddoc_anchor" id="goOnSameThread"></span>@trusted Task <code class="code">goOnSameThread</code>(void delegate() <code class="code">func</code>);
 <br>
-void <code class="code">goOnSameThread</code>(void function() <code class="code">func</code>);
+@safe Task <code class="code">goOnSameThread</code>(void function() <code class="code">func</code>);
 
           </code>
         </p>
@@ -696,6 +728,39 @@ Could be useful if there is a need to propagate TLS variable.
 </li><li class="ddoc_member">
   <div class="ddoc_member_header">
   <div class="ddoc_header_anchor">
+  <a href="#offload" id="offload"><code class="code">offload</code></a>
+</div>
+</div><div class="ddoc_decl">
+  <section class="section">
+    <div class="declaration">
+      <h4>Declaration</h4>
+      <div class="dlang">
+        <p class="para">
+          <code class="code">
+            <span class="ddoc_anchor" id="offload"></span>@trusted T <code class="code">offload</code>(T)(T delegate() <code class="code">work</code>);
+
+          </code>
+        </p>
+      </div>
+    </div>
+  </section>
+</div>
+<div class="ddoc_decl">
+  <section class="section ddoc_sections">
+  <div class="ddoc_summary">
+  <p class="para">
+    Run <code class="code">work</code> on a dedicated thread pool and pass the result back to the calling fiber or thread.
+    This avoids blocking event loop on computationally intensive tasks.
+  </p>
+</div>
+
+</section>
+
+</div>
+
+</li><li class="ddoc_member">
+  <div class="ddoc_member_header">
+  <div class="ddoc_header_anchor">
   <a href="#runFibers" id="runFibers"><code class="code">runFibers</code></a>
 </div>
 </div><div class="ddoc_decl">
@@ -705,7 +770,7 @@ Could be useful if there is a need to propagate TLS variable.
       <div class="dlang">
         <p class="para">
           <code class="code">
-            <span class="ddoc_anchor" id="runFibers"></span>void <code class="code">runFibers</code>();
+            <span class="ddoc_anchor" id="runFibers"></span>@trusted void <code class="code">runFibers</code>();
 
           </code>
         </p>
@@ -718,6 +783,109 @@ Could be useful if there is a need to propagate TLS variable.
   <div class="ddoc_summary">
   <p class="para">
     Start sheduler and run fibers until all are terminated.
+  </p>
+</div>
+
+</section>
+
+</div>
+
+</li><li class="ddoc_member">
+  <div class="ddoc_member_header">
+  <div class="ddoc_header_anchor">
+  <a href="#mutex" id="mutex"><code class="code">mutex</code></a>
+</div>
+</div><div class="ddoc_decl">
+  <section class="section">
+    <div class="declaration">
+      <h4>Declaration</h4>
+      <div class="dlang">
+        <p class="para">
+          <code class="code">
+            <span class="ddoc_anchor" id="mutex"></span>auto <code class="code">mutex</code>();
+
+          </code>
+        </p>
+      </div>
+    </div>
+  </section>
+</div>
+<div class="ddoc_decl">
+  <section class="section ddoc_sections">
+  <div class="ddoc_summary">
+  <p class="para">
+    Create non-recursive <code class="code">mutex</code>
+  </p>
+</div>
+<div class="ddoc_examples">
+  <h4>Examples</h4>
+  <p class="para">
+    
+<section class="code_listing">
+  <div class="code_sample">
+    <div class="dlang">
+      <ol class="code_lines">
+        <li><pre><code class="code">startloop();
+<span class="keyword">auto</span> mtx = <span class="psymbol">mutex</span>();
+<span class="keyword">int</span> counter = 0;
+go({
+    <span class="keyword">foreach</span> (_; 0..100) {
+        mtx.lock();
+        <span class="keyword">int</span> c = counter;
+        delay(1.msecs);
+        counter = c + 1;
+        mtx.unlock();
+    }
+});
+go({
+    <span class="keyword">foreach</span> (_; 0..100) {
+        mtx.lock();
+        <span class="keyword">int</span> c = counter;
+        delay(1.msecs);
+        counter = c + 1;
+        mtx.unlock();
+    }
+});
+runFibers();
+mtx.dispose();
+<span class="keyword">assert</span>(counter == 200);
+</code></pre></li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+  </p>
+</div>
+</section>
+
+</div>
+
+</li><li class="ddoc_member">
+  <div class="ddoc_member_header">
+  <div class="ddoc_header_anchor">
+  <a href="#recursiveMutex" id="recursiveMutex"><code class="code">recursiveMutex</code></a>
+</div>
+</div><div class="ddoc_decl">
+  <section class="section">
+    <div class="declaration">
+      <h4>Declaration</h4>
+      <div class="dlang">
+        <p class="para">
+          <code class="code">
+            <span class="ddoc_anchor" id="recursiveMutex"></span>auto <code class="code">recursiveMutex</code>();
+
+          </code>
+        </p>
+      </div>
+    </div>
+  </section>
+</div>
+<div class="ddoc_decl">
+  <section class="section ddoc_sections">
+  <div class="ddoc_summary">
+  <p class="para">
+    Create recursive mutex
   </p>
 </div>
 
@@ -903,7 +1071,7 @@ Could be useful if there is a need to propagate TLS variable.
       <div class="dlang">
         <p class="para">
           <code class="code">
-            <span class="ddoc_anchor" id="channel"></span>auto <code class="code">channel</code>(T)(size_t <code class="code">capacity</code> = 1);
+            <span class="ddoc_anchor" id="channel"></span>@safe auto <code class="code">channel</code>(T)(size_t <code class="code">capacity</code> = 1);
 
           </code>
         </p>
@@ -935,7 +1103,7 @@ Could be useful if there is a need to propagate TLS variable.
       <div class="dlang">
         <p class="para">
           <code class="code">
-            <span class="ddoc_anchor" id="select"></span>void <code class="code">select</code>(Args...)(auto ref Args <code class="code">args</code>) if (allSatisfy!(isChannel, Even!Args) &amp;&amp; allSatisfy!(isHandler, Odd!Args));
+            <span class="ddoc_anchor" id="select"></span>@trusted void <code class="code">select</code>(Args...)(auto ref Args <code class="code">args</code>) if (allSatisfy!(isChannel, Even!Args) &amp;&amp; allSatisfy!(isHandler, Odd!Args));
 
           </code>
         </p>
@@ -1099,7 +1267,7 @@ Could be useful if there is a need to propagate TLS variable.
       <div class="dlang">
         <p class="para">
           <code class="code">
-            <span class="ddoc_anchor" id="pool"></span>auto <code class="code">pool</code>(T)(size_t <code class="code">size</code>, Duration <code class="code">maxIdle</code>, T delegate() <code class="code">open</code>, void delegate(ref T) <code class="code">close</code>);
+            <span class="ddoc_anchor" id="pool"></span>@trusted auto <code class="code">pool</code>(T)(size_t <code class="code">size</code>, Duration <code class="code">maxIdle</code>, T delegate() <code class="code">open</code>, void delegate(ref T) <code class="code">close</code>);
 
           </code>
         </p>
