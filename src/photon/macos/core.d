@@ -274,6 +274,10 @@ public void startloop()
     fdMax = fdMax > 2^^24 ? 2^^24 : fdMax;
     ssize_t size = ((fdMax * Descriptor.sizeof) + pageSize-1) & ~(pageSize-1);
     descriptors = (cast(shared(Descriptor*)) mmap(null, size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0))[0..fdMax];
+    checked(cast(ssize_t)descriptors.ptr, "mmap failed");
+    size = ((fdMax * DescriptorState.sizeof) + pageSize-1) & ~(pageSize-1);
+    descriptorStates = (cast(shared(DescriptorState*)) mmap(null, size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0))[0..fdMax];
+    checked(cast(ssize_t)descriptorStates.ptr, "mmap failed");
     scheds = new SchedulerBlock[threads];
     foreach(ref sched; scheds) {
         sched.queue = IntrusiveQueue!(FiberExt, RawEvent)(RawEvent(0));
@@ -348,7 +352,7 @@ enum SyscallKind { accept, read, write, connect }
 void interceptFd(Fcntl needsFcntl)(int fd) nothrow {
     logf("Hit interceptFD");
     if (fd < 0 || fd >= descriptors.length) return;
-    if (cas(&descriptors[fd].state, DescriptorState.NOT_INITED, DescriptorState.INITIALIZING)) {
+    if (cas(&descriptorStates[fd], DescriptorState.NOT_INITED, DescriptorState.INITIALIZING)) {
         logf("First use, registering fd = %s", fd);
         static if(needsFcntl == Fcntl.explicit) {
             int flags = fcntl(fd, F_GETFL, 0);
@@ -363,9 +367,9 @@ void interceptFd(Fcntl needsFcntl)(int fd) nothrow {
         ke[1].flags = ke[0].flags = EV_ADD | EV_ENABLE | EV_CLEAR;
         int ret = kevent(getCurrentKqueue, ke.ptr, 2, null, 0, null);
         if (ret < 0) {
-            descriptors[fd].state = DescriptorState.THREADPOOL;
+            descriptorStates[fd] = DescriptorState.THREADPOOL;
         } else {
-            descriptors[fd].state = DescriptorState.NONBLOCKING;
+            descriptorStates[fd] = DescriptorState.NONBLOCKING;
         }
     }
 }
