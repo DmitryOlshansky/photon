@@ -140,6 +140,17 @@ public:
             sem.wait();
         }
     }
+
+    ///
+    bool tryLock() {
+        return cas(&counter, 1L, 0L);
+    }
+
+    ///
+    bool locked() {
+        return counter != 1;
+    }
+
     ///
     void unlock() {
         auto v = atomicFetchAdd(counter, 1);
@@ -211,7 +222,7 @@ public:
     void lock() shared {
         assert(currentFiber);
         splk.lock();
-        if (owner is cast(shared)currentFiber) {
+        if (this.unshared.owner is currentFiber) {
             this.unshared.recCount++;
             splk.unlock();
             return;
@@ -232,6 +243,33 @@ public:
             assert(this.recCount == 0);
             splk.unlock();
         }
+    }
+
+    ///
+    bool tryLock() shared {
+        assert(currentFiber);
+        splk.lock();
+        scope(exit) splk.unlock();
+        if (this.unshared.owner is currentFiber) {
+            this.unshared.recCount++;
+            return true;
+        }
+        else if(this.unshared.owner is null) {
+            assert(this.unshared.counter == 1);
+            this.unshared.owner = currentFiber;
+            this.unshared.counter = 0;
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    ///
+    bool locked() shared {
+        assert(currentFiber);
+        splk.lock();
+        scope(exit) splk.unlock();
+        return this.unshared.owner !is null;
     }
 
     ///
@@ -264,6 +302,45 @@ public:
 /// Create recursive mutex
 auto recursiveMutex() {
     return cast(shared)RecursiveMutex(1);
+}
+
+
+version(Posix)
+unittest {
+    static void testTryLock(alias createM)(int lockTimes) {
+        startloop();
+        auto m = createM();
+        auto ev = event(0);
+        shared bool unlocked = false;
+        go({
+            m.lock();
+            ev.trigger();
+            go({
+                ev.waitAndReset();
+                assert(m.locked());
+                assert(m.tryLock() == false);
+                ev.waitAndReset();
+                assert(!m.locked());
+                foreach (_; 0..lockTimes) {
+                    bool locked = m.tryLock();
+                    assert(locked);
+                }
+                assert(m.locked());
+                foreach (_; 0..lockTimes) {
+                    m.unlock();
+                }
+                assert(!m.locked());
+            });
+            delay(10.msecs);
+            m.unlock();
+            ev.trigger();
+        });
+        runFibers();
+        ev.dispose();
+        m.dispose();
+    }
+    testTryLock!(mutex)(1);
+    testTryLock!(recursiveMutex)(3);
 }
 
 version(Posix)
