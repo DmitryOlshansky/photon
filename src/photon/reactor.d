@@ -271,9 +271,13 @@ package(photon) void schedulerEntry(size_t n)
                 try {
                     f.call();
                 }
-                catch (Throwable e) {
+                catch (Exception e) {
                     f.thr = e;
                     onTermination(f);
+                }
+                catch (Throwable e) {
+                    stderr.writeln(e);
+                    abort();
                 }
                 if (f.state == FiberExt.State.TERM) {
                     onTermination(f);
