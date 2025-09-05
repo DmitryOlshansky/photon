@@ -100,9 +100,13 @@ public Task goOnSameThread(void function() func) @safe;
 T offload(T)(T delegate() work) @trusted;
 }
 
+/// Number of threads running the scheduler loop
+size_t schedulerThreads() @safe nothrow { return scheds.length; }
+
 /// Start sheduler and run fibers until all are terminated.
 void runFibers() @trusted
 {
+    assert(scheds.length > 0, "Need to initialize with startloop");
     startWorkQueue(scheds.length);
     Thread runThread(size_t n){ // damned D lexical capture "semantics"
         auto t = new Thread(() => schedulerEntry(n));
@@ -117,6 +121,13 @@ void runFibers() @trusted
     foreach (t; threads)
         t.join();
     terminateWorkQueues();
+}
+
+///Initialize and run fibers with the given main
+void runPhoton(void delegate() main) {
+    startloop();
+    go(main);
+    runFibers();
 }
 
 shared struct Mutex {
@@ -165,7 +176,7 @@ public:
 }
 
 /// Create non-recursive mutex
-auto mutex() {
+auto mutex() @trusted nothrow {
     return cast(shared)Mutex(1);
 }
 
@@ -300,7 +311,7 @@ public:
 }
 
 /// Create recursive mutex
-auto recursiveMutex() {
+auto recursiveMutex() @trusted nothrow {
     return cast(shared)RecursiveMutex(1);
 }
 
@@ -382,6 +393,8 @@ unittest {
 
 version(Posix)
 public struct Condition {
+nothrow:
+@trusted:
 private:
     alias Waiters = LinkedList!(AwaitingFiber*, "next", "prev");
     Waiters waiters;
@@ -389,37 +402,44 @@ private:
 public:
     ///
     void wait(M)(ref M mutex) shared {
-        assert(currentFiber !is null);
-        splk.lock();
-        mutex.unlock();
-        auto f = currentFiber;
-        auto await = AwaitingFiber(cast(shared)&currentFiber);
-        this.unshared.waiters.append(&await);
-        splk.unlock();
-        FiberExt.yield();
-        mutex.lock();
+        try {
+            assert(currentFiber !is null);
+            splk.lock();
+            mutex.unlock();
+            auto f = currentFiber;
+            auto await = AwaitingFiber(cast(shared)&currentFiber);
+            this.unshared.waiters.append(&await);
+            splk.unlock();
+            FiberExt.yield();
+            mutex.lock();
+        } catch (Throwable t) { assert(false, t.toString()); }
     }
 
     ///
-    void wait(M)(ref M mutex, Duration d) shared {
-        assert(currentFiber !is null);
-        splk.lock();
-        mutex.unlock();
-        auto f = currentFiber;
-        AwaitingFiber await = AwaitingFiber(cast(shared)&f);
-        this.unshared.waiters.append(&await);
-        TimedFiber tm = timerEntry(&f, d);
-        timeQueue.insert(&tm);
-        splk.unlock();
-        FiberExt.yield();
-        if (currentFiber.wakeFd == WAKE_TIMER) {
+    bool wait(M)(ref M mutex, Duration d) shared {
+        try {
+            assert(currentFiber !is null);
             splk.lock();
-            this.unshared.waiters.remove(&await);
+            mutex.unlock();
+            auto f = currentFiber;
+            AwaitingFiber await = AwaitingFiber(cast(shared)&f);
+            this.unshared.waiters.append(&await);
+            TimedFiber tm = timerEntry(&f, d);
+            timeQueue.insert(&tm);
             splk.unlock();
-        } else {
-            timeQueue.cancel(&tm);
-        }
-        mutex.lock();
+            FiberExt.yield();
+            bool success = false;
+            if (currentFiber.wakeFd == WAKE_TIMER) {
+                splk.lock();
+                this.unshared.waiters.remove(&await);
+                splk.unlock();
+            } else {
+                timeQueue.cancel(&tm);
+                success = true;
+            }
+            mutex.lock();
+            return success;
+        } catch(Throwable t) { assert(false, t.toString()); }
     }
 
     ///
@@ -451,7 +471,7 @@ public:
 }
 
 /// Create a conditional variable
-auto condition() {
+auto condition() @trusted nothrow {
     return cast(shared)Condition.init;
 }
 

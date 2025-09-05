@@ -218,6 +218,7 @@ extern(Windows) VOID timerCallback(PTP_CALLBACK_INSTANCE Instance, PVOID Context
 
 ///
 struct Timer {
+    alias Callback = void delegate() @safe nothrow;
     void wait(Duration dur) {
         auto timer = CreateThreadpoolTimer(&timerCallback, cast(void*)currentFiber, &environ);
         wenforce(timer != null, "Failed to create threadpool timer");
@@ -229,6 +230,10 @@ struct Timer {
         FiberExt.yield();
         CloseThreadpoolTimer(timer);
     }
+
+    void stop() nothrow {}
+    bool pending() nothrow { return false; }
+    void rearm(Duration dur) nothrow {}
 }
 
 ///

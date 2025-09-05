@@ -206,7 +206,7 @@ nothrow @trusted:
 
     /// Free this semaphore
     void dispose() {
-        close(evfd).checked;
+        if (close(evfd) < 0) abort();//.checked("dispose semaphore");
     }
 
     void dispose() shared {
@@ -220,9 +220,13 @@ public auto nothrow semaphore(int initialCount) {
 }
 
 public struct Timer {
+    alias Callback = void delegate() @safe nothrow;
     void wait(Duration d) {
         delay(d);
     }
+    void stop() nothrow {}
+    bool pending() nothrow { return false; }
+    void rearm(Duration dur) nothrow {}
 }
 
 ///
@@ -265,7 +269,7 @@ public void startloop() nothrow @trusted
         epoll_event event;
         event.events = EPOLLIN;
         event.data.fd = sched.queue.event.fd;
-        epoll_ctl(sched.event_loop, EPOLL_CTL_ADD, sched.queue.event.fd, &event).checked;
+        epoll_ctl(sched.event_loop, EPOLL_CTL_ADD, sched.queue.event.fd, &event).checked("registering event");
     }
 
     initWorkQueues(threads);
@@ -351,11 +355,6 @@ void interceptFd(Fcntl needsFcntl)(int fd) nothrow {
     if (fd < 0 || fd >= descriptors.length) return;
     if (cas(&descriptorStates[fd], DescriptorState.NOT_INITED, DescriptorState.INITIALIZING)) {
         logf("First use, registering fd = %s", fd);
-        static if(needsFcntl == Fcntl.explicit) {
-            int flags = fcntl(fd, F_GETFL, 0);
-            fcntl(fd, F_SETFL, flags | O_NONBLOCK).checked;
-            logf("Setting FCNTL. %x", cast(void*)currentFiber);
-        }
         epoll_event event;
         event.events = EPOLLIN | EPOLLOUT | EPOLLET;
         event.data.fd = fd;
@@ -366,6 +365,11 @@ void interceptFd(Fcntl needsFcntl)(int fd) nothrow {
         }
         else {
             logf("isSocket = true FD = %s", fd);
+            static if(needsFcntl == Fcntl.explicit) {
+                int flags = fcntl(fd, F_GETFL, 0);
+                fcntl(fd, F_SETFL, flags | O_NONBLOCK).checked("setting non-blocking I/O");
+                logf("Setting FCNTL. %x", cast(void*)currentFiber);
+            }
             descriptorStates[fd] = DescriptorState.NONBLOCKING;
         }
     }
