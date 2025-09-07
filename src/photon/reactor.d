@@ -635,15 +635,15 @@ extern(C) ssize_t write(int fd, const void *buf, size_t count)
         (fd, cast(size_t)buf, count);
 }
 
-extern(C) ssize_t accept(int sockfd, sockaddr *addr, socklen_t *addrlen)
+extern(C) int accept(int sockfd, sockaddr *addr, socklen_t *addrlen)
 {
-    return universalSyscall!(SYS_ACCEPT, "accept", SyscallKind.accept, Fcntl.explicit, EWOULDBLOCK)
+    return cast(int)universalSyscall!(SYS_ACCEPT, "accept", SyscallKind.accept, Fcntl.explicit, EWOULDBLOCK)
         (sockfd, cast(size_t) addr, cast(size_t) addrlen);    
 }
 
-extern(C) ssize_t connect(int sockfd, const sockaddr *addr, socklen_t *addrlen)
+extern(C) int connect(int sockfd, const sockaddr *addr, socklen_t addrlen)
 {
-    return universalSyscall!(SYS_CONNECT, "connect", SyscallKind.connect, Fcntl.explicit, EINPROGRESS)
+    return cast(int)universalSyscall!(SYS_CONNECT, "connect", SyscallKind.connect, Fcntl.explicit, EINPROGRESS)
         (sockfd, cast(size_t) addr, cast(size_t) addrlen);
 }
 
