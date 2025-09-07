@@ -206,7 +206,7 @@ nothrow @trusted:
 
     /// Free this semaphore
     void dispose() {
-        if (close(evfd) < 0) abort();//.checked("dispose semaphore");
+        close(evfd).checked("dispose semaphore");
     }
 
     void dispose() shared {
