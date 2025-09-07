@@ -309,7 +309,19 @@ class FiberExt : Fiber {
         scheds[numScheduler].queue.push(this);
     }
 
+    void join() shared {
+        assert(false);
+    }
+
     void join() {
+        assert(false);
+    }
+
+    void joinNothrow() nothrow shared {
+        this.unshared.joinNothrow();
+    }
+
+    void joinNothrow() nothrow {
         assert(false);
     }
 }
