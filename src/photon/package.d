@@ -428,6 +428,7 @@ public:
             timeQueue.insert(&tm);
             splk.unlock();
             FiberExt.yield();
+            assert(currentFiber !is null);
             bool success = false;
             if (currentFiber.wakeFd == WAKE_TIMER) {
                 splk.lock();
@@ -471,6 +472,7 @@ public:
 }
 
 /// Create a conditional variable
+version(Posix)
 auto condition() @trusted nothrow {
     return cast(shared)Condition.init;
 }
