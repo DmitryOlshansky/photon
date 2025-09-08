@@ -17,7 +17,7 @@ enum int MSG_DONTWAIT = 0x80;
 alias off_t = long;
 alias quad_t = ulong;
 extern(C) nothrow off_t __syscall(quad_t number, ...);
-extern(C) void perror(const(char) *s) nothrow;
+private extern(C) void perror(const(char) *s) nothrow;
 
 T checked(T: ssize_t)(T value, const char* msg="unknown place") nothrow {
     if (value < 0) {

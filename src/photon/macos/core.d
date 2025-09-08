@@ -94,9 +94,13 @@ nothrow:
 }
 
 public struct Timer {
+    alias Callback = void delegate() @safe nothrow;
     void wait(Duration d) {
         delay(d);
     }
+    void stop() nothrow {}
+    bool pending() nothrow { return false; }
+    void rearm(Duration dur) nothrow {}
 }
 
 ///
@@ -354,11 +358,6 @@ void interceptFd(Fcntl needsFcntl)(int fd) nothrow {
     if (fd < 0 || fd >= descriptors.length) return;
     if (cas(&descriptorStates[fd], DescriptorState.NOT_INITED, DescriptorState.INITIALIZING)) {
         logf("First use, registering fd = %s", fd);
-        static if(needsFcntl == Fcntl.explicit) {
-            int flags = fcntl(fd, F_GETFL, 0);
-            fcntl(fd, F_SETFL, flags | O_NONBLOCK).checked;
-            logf("Setting FCNTL. %x", cast(void*)currentFiber);
-        }
         KEvent[2] ke;
         ke[0].ident = fd;
         ke[1].ident = fd;
@@ -369,6 +368,11 @@ void interceptFd(Fcntl needsFcntl)(int fd) nothrow {
         if (ret < 0) {
             descriptorStates[fd] = DescriptorState.THREADPOOL;
         } else {
+            static if(needsFcntl == Fcntl.explicit) {
+                int flags = fcntl(fd, F_GETFL, 0);
+                fcntl(fd, F_SETFL, flags | O_NONBLOCK).checked("registering for non-blocking I/O");
+                logf("Setting FCNTL. %x", cast(void*)currentFiber);
+            }
             descriptorStates[fd] = DescriptorState.NONBLOCKING;
         }
     }

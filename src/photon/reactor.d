@@ -92,7 +92,12 @@ class FiberExt : Fiber {
         }
     }
 
+    void join() shared {
+        this.unshared.join();
+    }
+
     void join() {
+        assert(currentFiber);
         bool suspend = false;
         joinLock.lock();
         if (state != Fiber.State.TERM) {
@@ -102,6 +107,23 @@ class FiberExt : Fiber {
         joinLock.unlock();
         if (suspend) yield();
         if (thr) throw thr;
+    }
+
+    void joinNothrow() nothrow shared {
+        this.unshared.joinNothrow();
+    }
+
+    void joinNothrow() nothrow {
+        assert(currentFiber);
+        bool suspend = false;
+        joinLock.lock();
+        if (state != Fiber.State.TERM) {
+            joiners = currentFiber;
+            suspend = true;
+        }
+        joinLock.unlock();
+        if (suspend) yield();
+        // skips rethrowing exception
     }
 
     void wakeUpJoiners(size_t numSched) {
@@ -271,9 +293,13 @@ package(photon) void schedulerEntry(size_t n)
                 try {
                     f.call();
                 }
-                catch (Throwable e) {
+                catch (Exception e) {
                     f.thr = e;
                     onTermination(f);
+                }
+                catch (Throwable e) {
+                    stderr.writeln(e);
+                    abort();
                 }
                 if (f.state == FiberExt.State.TERM) {
                     onTermination(f);
@@ -286,22 +312,24 @@ package(photon) void schedulerEntry(size_t n)
 }
 
 /// Convenience overload for functions
-public Task go(void function() func) {
+public Task go(void function() func) nothrow @trusted {
     return go({ func(); });
 }
 
 /// Setup a fiber task to run on the Photon scheduler.
-public Task go(void delegate() func) {
+public Task go(void delegate() func) nothrow @trusted  {
     uint choice;
     if (scheds.length == 1) choice = 0;
     else {
-        uint a = uniform!"[)"(0, cast(uint)scheds.length);
-        uint b = uniform!"[)"(0, cast(uint)scheds.length-1);
-        if (a == b) b = cast(uint)scheds.length-1;
-        uint loadA = scheds[a].assigned;
-        uint loadB = scheds[b].assigned;
-        if (loadA < loadB) choice = a;
-        else choice = b;
+        try {
+            uint a = uniform!"[)"(0, cast(uint)scheds.length);
+            uint b = uniform!"[)"(0, cast(uint)scheds.length-1);
+            if (a == b) b = cast(uint)scheds.length-1;
+            uint loadA = scheds[a].assigned;
+            uint loadB = scheds[b].assigned;
+            if (loadA < loadB) choice = a;
+            else choice = b;
+        } catch (Throwable t) { assert(false, t.toString()); }
     }
     atomicOp!"+="(scheds[choice].assigned, 1);
     atomicOp!"+="(alive, 1);
@@ -313,13 +341,13 @@ public Task go(void delegate() func) {
 }
 
 /// Convenience overload for goOnSameThread that accepts functions 
-public Task goOnSameThread(void function() func) {
+public Task goOnSameThread(void function() func) nothrow @trusted {
     return goOnSameThread({ func(); });
 }
 
 /// Same as go but make sure the fiber is scheduled on the same thread of the threadpool.
 /// Could be useful if there is a need to propagate TLS variable.
-public Task goOnSameThread(void delegate() func) {
+public Task goOnSameThread(void delegate() func) nothrow @trusted {
     auto choice = currentFiber !is null ? currentFiber.numScheduler : 0;
     atomicOp!"+="(scheds[choice].assigned, 1);
     atomicOp!"+="(alive, 1);
@@ -332,7 +360,7 @@ public Task goOnSameThread(void delegate() func) {
 
 
 /// Delay fiber execution by `req` duration.
-public nothrow void delay(T)(T req)
+public nothrow @trusted void delay(T)(T req)
 if (is(T : const timespec*) || is(T : Duration)) {
     FiberExt fiber = currentFiber;
     auto tm = timerEntry(&fiber, req);
@@ -350,6 +378,7 @@ template Unshared(T) {
         alias Unshared = T;
     }
 }
+
 ///
 public enum isAwaitable(E) = is (Unshared!E : Event) || is (Unshared!E : Semaphore) 
     || is(Unshared!E : Event*) || is(Unshared!E : Semaphore*);
@@ -606,15 +635,15 @@ extern(C) ssize_t write(int fd, const void *buf, size_t count)
         (fd, cast(size_t)buf, count);
 }
 
-extern(C) ssize_t accept(int sockfd, sockaddr *addr, socklen_t *addrlen)
+extern(C) int accept(int sockfd, sockaddr *addr, socklen_t *addrlen)
 {
-    return universalSyscall!(SYS_ACCEPT, "accept", SyscallKind.accept, Fcntl.explicit, EWOULDBLOCK)
+    return cast(int)universalSyscall!(SYS_ACCEPT, "accept", SyscallKind.accept, Fcntl.explicit, EWOULDBLOCK)
         (sockfd, cast(size_t) addr, cast(size_t) addrlen);    
 }
 
-extern(C) ssize_t connect(int sockfd, const sockaddr *addr, socklen_t *addrlen)
+extern(C) int connect(int sockfd, const sockaddr *addr, socklen_t addrlen)
 {
-    return universalSyscall!(SYS_CONNECT, "connect", SyscallKind.connect, Fcntl.explicit, EINPROGRESS)
+    return cast(int)universalSyscall!(SYS_CONNECT, "connect", SyscallKind.connect, Fcntl.explicit, EINPROGRESS)
         (sockfd, cast(size_t) addr, cast(size_t) addrlen);
 }
 

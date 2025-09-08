@@ -11,12 +11,12 @@ import std.concurrency;
 */
 struct Task {
 package:
-    FiberExt _fiber;
+    shared FiberExt _fiber;
     static ThreadInfo s_tidInfo;
 	
     this(FiberExt fiber)
-	@safe nothrow {
-		this._fiber = fiber;
+	@trusted nothrow {
+		this._fiber = cast(shared)fiber;
 	}
 
 public:
@@ -36,18 +36,18 @@ public:
 	}
 
 	nothrow {
-		package @property FiberExt taskFiber() @system { return _fiber; }
-		@property FiberExt fiber() @system { return this._fiber; }
+		package @property FiberExt taskFiber() @system { return cast()_fiber; }
+		@property FiberExt fiber() @system { return cast()this._fiber; }
 
 		/** Determines if the task is still running or scheduled to be run.
 		*/
 		@property bool running()
 		const @trusted {
-			return _fiber.state != Fiber.State.TERM;
+			return _fiber.unshared.state != Fiber.State.TERM;
 		}
 
-		package @property ref ThreadInfo tidInfo() @system { return _fiber ? _fiber.tidInfo : s_tidInfo; } // FIXME: this is not thread safe!
-		package @property ref const(ThreadInfo) tidInfo() const @system { return _fiber ? _fiber.tidInfo : s_tidInfo; } // FIXME: this is not thread safe!
+		@property ref ThreadInfo tidInfo() @system { return _fiber ? cast()_fiber.tidInfo : s_tidInfo; } // FIXME: this is not thread safe!
+		@property ref const(ThreadInfo) tidInfo() const @system { return _fiber ? cast()_fiber.tidInfo : s_tidInfo; } // FIXME: this is not thread safe!
 
 		/** Gets the `Tid` associated with this task for use with
 			`std.concurrency`.
@@ -61,7 +61,7 @@ public:
 	T opCast(T)() const shared @safe nothrow if (is(T == bool)) { return _fiber !is null; }
 
 	void join() @trusted { if (_fiber) _fiber.join(); }
-	void joinUninterruptible() @trusted { if (_fiber) _fiber.join(); }
+	void joinUninterruptible() @trusted nothrow { if (_fiber) _fiber.joinNothrow(); }
 	void interrupt() @trusted nothrow { 
         //noop
     }
