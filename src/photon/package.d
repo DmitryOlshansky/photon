@@ -407,7 +407,7 @@ public:
             splk.lock();
             mutex.unlock();
             auto f = currentFiber;
-            auto await = AwaitingFiber(cast(shared)&currentFiber);
+            auto await = AwaitingFiber(cast(shared)&f);
             this.unshared.waiters.append(&await);
             splk.unlock();
             FiberExt.yield();
@@ -428,7 +428,6 @@ public:
             timeQueue.insert(&tm);
             splk.unlock();
             FiberExt.yield();
-            assert(currentFiber !is null);
             bool success = false;
             if (currentFiber.wakeFd == WAKE_TIMER) {
                 splk.lock();
