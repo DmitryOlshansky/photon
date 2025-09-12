@@ -62,6 +62,7 @@ void terminateWorkQueues() {
 }
 
 void startWorkQueue(size_t threads) {
+    workQueueTerminated = false;
     void run(size_t n) nothrow {
         try {
             workThreads[n] = new Thread(() => processWorkQueue(n));
