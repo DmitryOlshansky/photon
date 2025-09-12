@@ -124,7 +124,7 @@ void runFibers() @trusted
 }
 
 ///Initialize and run fibers with the given main
-void runPhoton(void delegate() main) {
+void runPhoton(void delegate() main) @trusted {
     startloop();
     go(main);
     runFibers();

@@ -292,6 +292,9 @@ package(photon) void schedulerEntry(size_t n)
                 logf("Fiber %x started", cast(void*)f);
                 try {
                     f.call();
+                    if (f.state == FiberExt.State.TERM) {
+                        onTermination(f);
+                    }
                 }
                 catch (Exception e) {
                     f.thr = e;
@@ -300,9 +303,6 @@ package(photon) void schedulerEntry(size_t n)
                 catch (Throwable e) {
                     stderr.writeln(e);
                     abort();
-                }
-                if (f.state == FiberExt.State.TERM) {
-                    onTermination(f);
                 }
                 f = next;
             }
@@ -362,10 +362,19 @@ public Task goOnSameThread(void delegate() func) nothrow @trusted {
 /// Delay fiber execution by `req` duration.
 public nothrow @trusted void delay(T)(T req)
 if (is(T : const timespec*) || is(T : Duration)) {
-    FiberExt fiber = currentFiber;
-    auto tm = timerEntry(&fiber, req);
-    timeQueue.insert(&tm);
-    FiberExt.yield();
+    if (currentFiber is null) {
+        static if(is(T : const timespec*)) {
+            Duration toSleep = req.tv_sec * 1.seconds + req.tv_nsec * 1.nsecs;
+        } else {
+            Duration toSleep = req;
+        }
+        Thread.sleep(toSleep);
+    } else {
+        FiberExt fiber = currentFiber;
+        auto tm = timerEntry(&fiber, req);
+        timeQueue.insert(&tm);
+        FiberExt.yield();
+    }
 }
 
 template Unshared(T) {
