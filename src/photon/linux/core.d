@@ -245,7 +245,7 @@ public void initPhoton() nothrow @trusted
     cpu_set_t cpus;
     size_t threads = 0;
     if (sched_getaffinity(gettid(), cpus.sizeof, &cpus) < 0) {
-        photon.linux.support.perror("sched_getaffinity");
+        perror("sched_getaffinity");
     }
     for (size_t i = 0; i < cpus.sizeof*8; i++) {
         if (CPU_GET(i, &cpus))

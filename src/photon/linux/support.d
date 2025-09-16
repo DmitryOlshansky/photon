@@ -1,6 +1,6 @@
 module photon.linux.support;
 version(linux):
-package(photon):
+
 import core.sys.posix.unistd;
 import core.sys.linux.timerfd;
 import core.stdc.errno;

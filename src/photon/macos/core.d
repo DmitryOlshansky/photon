@@ -287,7 +287,7 @@ public void initPhoton() nothrow @trusted
     foreach(ref sched; scheds) {
         sched.queue = IntrusiveQueue!(FiberExt, RawEvent)(RawEvent(0));
         sched.event_loop = kqueue();
-        enforce(sched.event_loop != -1);
+        checked(sched.event_loop, "kqueue init failed");
     }
     initWorkQueues(threads);
 }
