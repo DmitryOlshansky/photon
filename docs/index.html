@@ -519,7 +519,7 @@
     Photon is a lightweight transparent fiber scheduler. It's inspired by Golang's green thread model and
     the spawn function is called <code class="code">go</code> doing the same job that Golang's keyword does.
     The framework API surface is kept to a minimum, many programs can be written using only
-    three primitives: <code class="code">startloop</code> to initialize Photon, <code class="code">runFibers</code> to start fiber scheduler and
+    three primitives: <code class="code">initPhoton</code> to initialize Photon, <code class="code">runScheduler</code> to start fiber scheduler and
     <code class="code">go</code> to create tasks, including the initial tasks.
 
   </p>
@@ -557,7 +557,7 @@
 }
 
 <span class="keyword">void</span> main() {
-    startloop();
+    initPhoton();
     <span class="keyword">auto</span> jobQueue = channel!string(2);
     <span class="keyword">auto</span> finishQueue = channel!<span class="keyword">int</span>(1);
     go({
@@ -577,7 +577,7 @@
         <span class="keyword">assert</span>(completions.length == 2);
         jobQueue.close(); <span class="comment">// all producers are done
 </span>    });
-    runFibers();
+    runScheduler();
 }
 </code></pre></li>
       </ol>
@@ -627,7 +627,7 @@
 </li><li class="ddoc_member">
   <div class="ddoc_member_header">
   <div class="ddoc_header_anchor">
-  <a href="#startloop" id="startloop"><code class="code">startloop</code></a>
+  <a href="#initPhoton" id="initPhoton"><code class="code">initPhoton</code></a>
 </div>
 </div><div class="ddoc_decl">
   <section class="section">
@@ -636,7 +636,7 @@
       <div class="dlang">
         <p class="para">
           <code class="code">
-            <span class="ddoc_anchor" id="startloop"></span>nothrow @trusted Task <code class="code">startloop</code>();
+            <span class="ddoc_anchor" id="initPhoton"></span>nothrow @trusted Task <code class="code">initPhoton</code>();
 
           </code>
         </p>
@@ -761,7 +761,7 @@ Could be useful if there is a need to propagate TLS variable.
 </li><li class="ddoc_member">
   <div class="ddoc_member_header">
   <div class="ddoc_header_anchor">
-  <a href="#runFibers" id="runFibers"><code class="code">runFibers</code></a>
+  <a href="#schedulerThreads" id="schedulerThreads"><code class="code">schedulerThreads</code></a>
 </div>
 </div><div class="ddoc_decl">
   <section class="section">
@@ -770,7 +770,39 @@ Could be useful if there is a need to propagate TLS variable.
       <div class="dlang">
         <p class="para">
           <code class="code">
-            <span class="ddoc_anchor" id="runFibers"></span>@trusted void <code class="code">runFibers</code>();
+            <span class="ddoc_anchor" id="schedulerThreads"></span>nothrow @safe size_t <code class="code">schedulerThreads</code>();
+
+          </code>
+        </p>
+      </div>
+    </div>
+  </section>
+</div>
+<div class="ddoc_decl">
+  <section class="section ddoc_sections">
+  <div class="ddoc_summary">
+  <p class="para">
+    Number of threads running the scheduler loop
+  </p>
+</div>
+
+</section>
+
+</div>
+
+</li><li class="ddoc_member">
+  <div class="ddoc_member_header">
+  <div class="ddoc_header_anchor">
+  <a href="#runScheduler" id="runScheduler"><code class="code">runScheduler</code></a>
+</div>
+</div><div class="ddoc_decl">
+  <section class="section">
+    <div class="declaration">
+      <h4>Declaration</h4>
+      <div class="dlang">
+        <p class="para">
+          <code class="code">
+            <span class="ddoc_anchor" id="runScheduler"></span>@trusted void <code class="code">runScheduler</code>();
 
           </code>
         </p>
@@ -793,6 +825,38 @@ Could be useful if there is a need to propagate TLS variable.
 </li><li class="ddoc_member">
   <div class="ddoc_member_header">
   <div class="ddoc_header_anchor">
+  <a href="#runPhoton" id="runPhoton"><code class="code">runPhoton</code></a>
+</div>
+</div><div class="ddoc_decl">
+  <section class="section">
+    <div class="declaration">
+      <h4>Declaration</h4>
+      <div class="dlang">
+        <p class="para">
+          <code class="code">
+            <span class="ddoc_anchor" id="runPhoton"></span>@trusted void <code class="code">runPhoton</code>(void delegate() <code class="code">main</code>);
+
+          </code>
+        </p>
+      </div>
+    </div>
+  </section>
+</div>
+<div class="ddoc_decl">
+  <section class="section ddoc_sections">
+  <div class="ddoc_summary">
+  <p class="para">
+    Initialize and run fibers with the given <code class="code">main</code>
+  </p>
+</div>
+
+</section>
+
+</div>
+
+</li><li class="ddoc_member">
+  <div class="ddoc_member_header">
+  <div class="ddoc_header_anchor">
   <a href="#mutex" id="mutex"><code class="code">mutex</code></a>
 </div>
 </div><div class="ddoc_decl">
@@ -802,7 +866,7 @@ Could be useful if there is a need to propagate TLS variable.
       <div class="dlang">
         <p class="para">
           <code class="code">
-            <span class="ddoc_anchor" id="mutex"></span>auto <code class="code">mutex</code>();
+            <span class="ddoc_anchor" id="mutex"></span>nothrow @trusted auto <code class="code">mutex</code>();
 
           </code>
         </p>
@@ -825,7 +889,7 @@ Could be useful if there is a need to propagate TLS variable.
   <div class="code_sample">
     <div class="dlang">
       <ol class="code_lines">
-        <li><pre><code class="code">startloop();
+        <li><pre><code class="code">initPhoton();
 <span class="keyword">auto</span> mtx = <span class="psymbol">mutex</span>();
 <span class="keyword">int</span> counter = 0;
 go({
@@ -846,7 +910,7 @@ go({
         mtx.unlock();
     }
 });
-runFibers();
+runScheduler();
 mtx.dispose();
 <span class="keyword">assert</span>(counter == 200);
 </code></pre></li>
@@ -864,6 +928,159 @@ mtx.dispose();
 </li><li class="ddoc_member">
   <div class="ddoc_member_header">
   <div class="ddoc_header_anchor">
+  <a href="#RecursiveMutex" id="RecursiveMutex"><code class="code">RecursiveMutex</code></a>
+</div>
+</div><div class="ddoc_decl">
+  <section class="section">
+    <div class="declaration">
+      <h4>Declaration</h4>
+      <div class="dlang">
+        <p class="para">
+          <code class="code">
+            <span class="ddoc_anchor" id="RecursiveMutex"></span>struct <code class="code">RecursiveMutex</code>;
+
+          </code>
+        </p>
+      </div>
+    </div>
+  </section>
+</div>
+<div class="ddoc_decl">
+  
+<ul class="ddoc_members">
+  <li class="ddoc_member">
+  <div class="ddoc_member_header">
+  <div class="ddoc_header_anchor">
+  <a href="#RecursiveMutex.lock" id="RecursiveMutex.lock"><code class="code">lock</code></a>
+</div>
+</div><div class="ddoc_decl">
+  <section class="section">
+    <div class="declaration">
+      <h4>Declaration</h4>
+      <div class="dlang">
+        <p class="para">
+          <code class="code">
+            <span class="ddoc_anchor" id="RecursiveMutex.lock"></span>nothrow @trusted void <code class="code">lock</code>() shared;
+
+          </code>
+        </p>
+      </div>
+    </div>
+  </section>
+</div>
+<div class="ddoc_decl">
+  
+
+</div>
+
+</li><li class="ddoc_member">
+  <div class="ddoc_member_header">
+  <div class="ddoc_header_anchor">
+  <a href="#RecursiveMutex.tryLock" id="RecursiveMutex.tryLock"><code class="code">tryLock</code></a>
+</div>
+</div><div class="ddoc_decl">
+  <section class="section">
+    <div class="declaration">
+      <h4>Declaration</h4>
+      <div class="dlang">
+        <p class="para">
+          <code class="code">
+            <span class="ddoc_anchor" id="RecursiveMutex.tryLock"></span>nothrow @trusted bool <code class="code">tryLock</code>() shared;
+
+          </code>
+        </p>
+      </div>
+    </div>
+  </section>
+</div>
+<div class="ddoc_decl">
+  
+
+</div>
+
+</li><li class="ddoc_member">
+  <div class="ddoc_member_header">
+  <div class="ddoc_header_anchor">
+  <a href="#RecursiveMutex.locked" id="RecursiveMutex.locked"><code class="code">locked</code></a>
+</div>
+</div><div class="ddoc_decl">
+  <section class="section">
+    <div class="declaration">
+      <h4>Declaration</h4>
+      <div class="dlang">
+        <p class="para">
+          <code class="code">
+            <span class="ddoc_anchor" id="RecursiveMutex.locked"></span>nothrow @trusted bool <code class="code">locked</code>() shared;
+
+          </code>
+        </p>
+      </div>
+    </div>
+  </section>
+</div>
+<div class="ddoc_decl">
+  
+
+</div>
+
+</li><li class="ddoc_member">
+  <div class="ddoc_member_header">
+  <div class="ddoc_header_anchor">
+  <a href="#RecursiveMutex.unlock" id="RecursiveMutex.unlock"><code class="code">unlock</code></a>
+</div>
+</div><div class="ddoc_decl">
+  <section class="section">
+    <div class="declaration">
+      <h4>Declaration</h4>
+      <div class="dlang">
+        <p class="para">
+          <code class="code">
+            <span class="ddoc_anchor" id="RecursiveMutex.unlock"></span>nothrow @trusted void <code class="code">unlock</code>() shared;
+
+          </code>
+        </p>
+      </div>
+    </div>
+  </section>
+</div>
+<div class="ddoc_decl">
+  
+
+</div>
+
+</li><li class="ddoc_member">
+  <div class="ddoc_member_header">
+  <div class="ddoc_header_anchor">
+  <a href="#RecursiveMutex.dispose" id="RecursiveMutex.dispose"><code class="code">dispose</code></a>
+</div>
+</div><div class="ddoc_decl">
+  <section class="section">
+    <div class="declaration">
+      <h4>Declaration</h4>
+      <div class="dlang">
+        <p class="para">
+          <code class="code">
+            <span class="ddoc_anchor" id="RecursiveMutex.dispose"></span>nothrow @trusted void <code class="code">dispose</code>() shared;
+
+          </code>
+        </p>
+      </div>
+    </div>
+  </section>
+</div>
+<div class="ddoc_decl">
+  
+
+</div>
+
+</li>
+</ul>
+
+</div>
+
+</li><li class="ddoc_member">
+  <div class="ddoc_member_header">
+  <div class="ddoc_header_anchor">
   <a href="#recursiveMutex" id="recursiveMutex"><code class="code">recursiveMutex</code></a>
 </div>
 </div><div class="ddoc_decl">
@@ -873,7 +1090,7 @@ mtx.dispose();
       <div class="dlang">
         <p class="para">
           <code class="code">
-            <span class="ddoc_anchor" id="recursiveMutex"></span>auto <code class="code">recursiveMutex</code>();
+            <span class="ddoc_anchor" id="recursiveMutex"></span>nothrow @trusted auto <code class="code">recursiveMutex</code>();
 
           </code>
         </p>
@@ -886,6 +1103,38 @@ mtx.dispose();
   <div class="ddoc_summary">
   <p class="para">
     Create recursive mutex
+  </p>
+</div>
+
+</section>
+
+</div>
+
+</li><li class="ddoc_member">
+  <div class="ddoc_member_header">
+  <div class="ddoc_header_anchor">
+  <a href="#condition" id="condition"><code class="code">condition</code></a>
+</div>
+</div><div class="ddoc_decl">
+  <section class="section">
+    <div class="declaration">
+      <h4>Declaration</h4>
+      <div class="dlang">
+        <p class="para">
+          <code class="code">
+            <span class="ddoc_anchor" id="condition"></span>nothrow @trusted auto <code class="code">condition</code>();
+
+          </code>
+        </p>
+      </div>
+    </div>
+  </section>
+</div>
+<div class="ddoc_decl">
+  <section class="section ddoc_sections">
+  <div class="ddoc_summary">
+  <p class="para">
+    Create a conditional variable
   </p>
 </div>
 

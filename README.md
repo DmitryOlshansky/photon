@@ -34,19 +34,19 @@ Typically the photon-powered program looks like this:
     {
 	"name" : "photon-example",
         "dependencies": {
-		"photon": "0.14.1"
+		"photon": "0.15.0"
         }
     }
 +/
 import photon;
 
 void main() {
- startloop(); // start the event loop thread and initializes Photon's data structures
- go({
-   // the root fiber task goes here, typically this is accepting or connecting sockets,
-   // spawning new fibers each to handle new connections.
- });
- runFibers(); // run all fibers on the scheduler, until all are completed
+    initPhoton(); // initializes Photon's data structures
+    go({
+        // the root fiber task goes here, typically this is accepting or connecting sockets,
+        // spawning new fibers each to handle new connections.
+    });
+    runScheduler(); // run all fibers on the scheduler, until all are completed
 }
 ```
 
