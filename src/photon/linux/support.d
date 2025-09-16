@@ -1,9 +1,11 @@
 module photon.linux.support;
 version(linux):
+
 import core.sys.posix.unistd;
 import core.sys.linux.timerfd;
 import core.stdc.errno;
 import core.stdc.stdlib;
+import std.stdio : perror;
 import core.thread;
 import core.stdc.config;
 import core.sys.posix.pthread;
@@ -11,8 +13,6 @@ import photon.linux.syscalls;
 
 enum int MSG_DONTWAIT = 0x40;
 enum int SOCK_NONBLOCK = 0x800;
-
-extern(C) void perror(const(char) *s) nothrow;
 
 T checked(T: ssize_t)(T value, const char* msg="unknown place") nothrow {
     if (value < 0) {

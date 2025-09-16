@@ -58,14 +58,14 @@ void reader(int fd) {
 void main(){
    int[2] socks;
 
-   startloop();
+   initPhoton();
    socketpair(AF_UNIX, SOCK_STREAM, 0, socks).checked("here");
    logf("socks = %s", socks);
    auto wr = new Thread(() => writer(socks[0]));
    wr.start();
 
    spawn(() => reader(socks[1]));
-   runFibers();
+   runScheduler();
 
    wr.join();
 }

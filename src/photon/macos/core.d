@@ -94,6 +94,7 @@ nothrow:
 }
 
 public struct Timer {
+@trusted:
     alias Callback = void delegate() @safe nothrow;
     void wait(Duration d) {
         delay(d);
@@ -266,7 +267,7 @@ int getCurrentKqueue() nothrow {
 }
 
 
-public void startloop()
+public void initPhoton() nothrow @trusted
 {
     auto s = atomicFetchAdd(inited, 1);
     if (s != 0) return;
@@ -286,7 +287,7 @@ public void startloop()
     foreach(ref sched; scheds) {
         sched.queue = IntrusiveQueue!(FiberExt, RawEvent)(RawEvent(0));
         sched.event_loop = kqueue();
-        enforce(sched.event_loop != -1);
+        checked(sched.event_loop, "kqueue init failed");
     }
     initWorkQueues(threads);
 }

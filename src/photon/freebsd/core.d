@@ -422,7 +422,7 @@ void printStats()
 
 shared int kq;
 
-public void startloop()
+public void initPhoton()
 {
     import core.cpuid;
     uint threads = threadsPerCPU;

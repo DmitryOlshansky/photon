@@ -33,7 +33,7 @@ immutable urls = [
 ];
 
 void main(){
-	startloop();
+	initPhoton();
 	void spawnDownload(string url, string file) {
 		go(() => download(url, file));
 	}
@@ -73,7 +73,7 @@ void main(){
 	foreach(url; urls) {
 		spawnDownload(url, url.split('/').back);
 	}
-	runFibers();
+	runScheduler();
 	sw.stop();
 	writefln("Concurrently: %s ms", sw.peek.total!"msecs");
 	

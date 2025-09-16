@@ -40,7 +40,7 @@ void reader(int fd) {
 
 void main() {
    int[2] socks;
-   startloop();
+   initPhoton();
    check(socketpair(AF_UNIX, SOCK_STREAM, 0, socks));
    logf("socks = %s", socks);
    // spawn a thread to run I/O loop
@@ -50,7 +50,7 @@ void main() {
 
    // spawn fiber to read stuff
    go(() => writer(socks[1]));
-   runFibers();
+   runScheduler();
    //
    wr.join();
 }

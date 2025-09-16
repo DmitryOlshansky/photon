@@ -218,6 +218,7 @@ extern(Windows) VOID timerCallback(PTP_CALLBACK_INSTANCE Instance, PVOID Context
 
 ///
 struct Timer {
+@trusted:
     alias Callback = void delegate() @safe nothrow;
     void wait(Duration dur) {
         auto timer = CreateThreadpoolTimer(&timerCallback, cast(void*)currentFiber, &environ);
@@ -338,7 +339,7 @@ __gshared TP_CALLBACK_ENVIRON_V3 environ; // callback environment for the pool
 shared int alive; // count of non-terminated Fibers scheduled
 
 
-public void startloop() {
+public void initPhoton() {
     SYSTEM_INFO info;
     GetSystemInfo(&info);
     // TODO: handle NUMA case

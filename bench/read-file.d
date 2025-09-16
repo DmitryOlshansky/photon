@@ -8,7 +8,7 @@ import core.sys.posix.unistd;
 import photon;
 
 void main(){
-    startloop();
+    initPhoton();
     std.file.write("file.txt", "Read Test");
     go({
 
@@ -20,5 +20,5 @@ void main(){
             writef("return  = %s\n", buf[0..r]);
 
     });
-    runFibers();
+    runScheduler();
 }

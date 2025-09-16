@@ -34,10 +34,10 @@ void secondJob() {
 }
 
 void main() {
-    startloop();
+    initPhoton();
     ev1 = event(false);
     ev2 = event(false);
     go(&firstJob);
     go(&secondJob);
-    runFibers();
+    runScheduler();
 }

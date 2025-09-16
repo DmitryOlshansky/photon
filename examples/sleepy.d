@@ -27,7 +27,7 @@ void task(string msg, Duration duration) {
 }
 
 void main() {
-    startloop();
+    initPhoton();
     writeln("Starting a bunch of fibers and threads, each waiting 1 second");
     foreach (_; 0..1000) {
         go({
@@ -39,5 +39,5 @@ void main() {
             task("thread sleep is over", 1.seconds);
         }).start();
     }
-    runFibers();
+    runScheduler();
 }

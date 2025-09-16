@@ -220,6 +220,7 @@ public auto nothrow semaphore(int initialCount) {
 }
 
 public struct Timer {
+@trusted:
     alias Callback = void delegate() @safe nothrow;
     void wait(Duration d) {
         delay(d);
@@ -237,14 +238,14 @@ public auto timer() {
 enum int MAX_EVENTS = 500;
 shared long inited;
 
-public void startloop() nothrow @trusted
+public void initPhoton() nothrow @trusted
 {
     auto s = atomicFetchAdd(inited, 1);
     if (s != 0) return;
     cpu_set_t cpus;
     size_t threads = 0;
     if (sched_getaffinity(gettid(), cpus.sizeof, &cpus) < 0) {
-        photon.linux.support.perror("sched_getaffinity");
+        perror("sched_getaffinity");
     }
     for (size_t i = 0; i < cpus.sizeof*8; i++) {
         if (CPU_GET(i, &cpus))

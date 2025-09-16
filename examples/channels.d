@@ -36,7 +36,7 @@ void second(shared Channel!string work, shared Channel!int completion) {
 }
 
 void main() {
-    startloop();
+    initPhoton();
     auto jobQueue = channel!string(2);
     auto finishQueue = channel!int(1);
     go({
@@ -56,6 +56,6 @@ void main() {
         assert(completions.length == 2);
         jobQueue.close(); // all producers are done
     });
-    runFibers();
+    runScheduler();
 }
 
