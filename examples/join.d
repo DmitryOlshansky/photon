@@ -20,7 +20,7 @@ version(Windows) {
 } else version(Posix) {
 
 void main() {
-    startloop();
+    initPhoton();
     shared int flag = 0;
     auto task1 = go({
         flag = 1;
@@ -38,7 +38,7 @@ void main() {
             assert(e.msg == "Boom!");
         }
     });
-    runFibers();
+    runScheduler();
 }
 
 }

@@ -2,7 +2,7 @@
     Photon is a lightweight transparent fiber scheduler. It's inspired by Golang's green thread model and
     the spawn function is called `go` doing the same job that Golang's keyword does. 
     The framework API surface is kept to a minimum, many programs can be written using only 
-    three primitives: `startloop` to initialize Photon, `runFibers` to start fiber scheduler and 
+    three primitives: `initPhoton` to initialize Photon, `runScheduler` to start fiber scheduler and 
     `go` to create tasks, including the initial tasks.
     
     Example, showcasing channels and std.range interop:
@@ -31,7 +31,7 @@
     }
 
     void main() {
-        startloop();
+        initPhoton();
         auto jobQueue = channel!string(2);
         auto finishQueue = channel!int(1);
         go({
@@ -51,7 +51,7 @@
             assert(completions.length == 2);
             jobQueue.close(); // all producers are done
         });
-        runFibers();
+        runScheduler();
     }
     ----
 +/
@@ -78,7 +78,7 @@ public struct Task {
 }
 
 /// Initialize event loop and internal data structures for Photon scheduler.
-public Task startloop() nothrow @trusted;
+public Task initPhoton() nothrow @trusted;
 
 /// Setup a fiber task to run on the Photon scheduler.
 public Task go(void delegate() func)  @trusted;
@@ -104,9 +104,9 @@ T offload(T)(T delegate() work) @trusted;
 size_t schedulerThreads() @safe nothrow { return scheds.length; }
 
 /// Start sheduler and run fibers until all are terminated.
-void runFibers() @trusted
+void runScheduler() @trusted
 {
-    assert(scheds.length > 0, "Need to initialize with startloop");
+    assert(scheds.length > 0, "Need to initialize with initPhoton");
     startWorkQueue(scheds.length);
     Thread runThread(size_t n){ // damned D lexical capture "semantics"
         auto t = new Thread(() => schedulerEntry(n));
@@ -125,9 +125,9 @@ void runFibers() @trusted
 
 ///Initialize and run fibers with the given main
 void runPhoton(void delegate() main) @trusted {
-    startloop();
+    initPhoton();
     go(main);
-    runFibers();
+    runScheduler();
 }
 
 shared struct Mutex {
@@ -183,7 +183,7 @@ auto mutex() @trusted nothrow {
 ///
 version(Posix)
 unittest {
-    startloop();
+    initPhoton();
     auto mtx = mutex();
     int counter = 0;
     go({
@@ -204,7 +204,7 @@ unittest {
             mtx.unlock();
         }
     });
-    runFibers();
+    runScheduler();
     mtx.dispose();
     assert(counter == 200);
 }
@@ -319,7 +319,7 @@ auto recursiveMutex() @trusted nothrow {
 version(Posix)
 unittest {
     static void testTryLock(alias createM)(int lockTimes) {
-        startloop();
+        initPhoton();
         auto m = createM();
         auto ev = event(0);
         shared bool unlocked = false;
@@ -346,7 +346,7 @@ unittest {
             m.unlock();
             ev.trigger();
         });
-        runFibers();
+        runScheduler();
         ev.dispose();
         m.dispose();
     }
@@ -361,7 +361,7 @@ unittest {
     enum LOCK_CNT = 3;
     enum JOBS = 20;
     static void testMutex(M, alias createM)(int iters, int count, int lockingTimes, int jobs) {
-        startloop();
+        initPhoton();
         auto mtxs = new shared(M)[count];
         int[] counters = new int[count];
         foreach (i; 0..count) {
@@ -382,7 +382,7 @@ unittest {
         foreach(_; 0..jobs) {
             go(&task);
         }
-        runFibers();
+        runScheduler();
         foreach (i; 0..COUNT) {
             assert(counters[i] == ITERS * JOBS);
         }
@@ -479,7 +479,7 @@ auto condition() @trusted nothrow {
 version(Posix)
 unittest {
     void simpleCondTest(alias signal, alias wait)() {
-        startloop();
+        initPhoton();
         auto cond = condition();
         auto mtx = mutex();
         int counter = 0;
@@ -516,7 +516,7 @@ unittest {
                 signal(cond);
             }
         });
-        runFibers();
+        runScheduler();
         mtx.dispose();
         assert(counter == MAX + 1);
     }
@@ -528,7 +528,7 @@ unittest {
 
 version(Posix)
 unittest {
-    startloop();
+    initPhoton();
     auto cond = condition();
     auto mtx = mutex();
     go({
@@ -539,7 +539,7 @@ unittest {
         assert((s2 - s).total!"msecs" >= 10);
         mtx.unlock();
     });
-    runFibers();
+    runScheduler();
 }
 
 /++

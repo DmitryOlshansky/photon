@@ -32,7 +32,7 @@ void task(int n) {
 }
 
 void main() {
-    startloop();
+    initPhoton();
     writeln("Starting a bunch of fibers each waiting on a distinct event");
     foreach (i; 0..EVENTS) {
         events[i] = event(false);
@@ -46,5 +46,5 @@ void main() {
             events[i].trigger();
         }
     });
-    runFibers();
+    runScheduler();
 }

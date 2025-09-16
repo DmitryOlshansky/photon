@@ -220,6 +220,7 @@ public auto nothrow semaphore(int initialCount) {
 }
 
 public struct Timer {
+@trusted:
     alias Callback = void delegate() @safe nothrow;
     void wait(Duration d) {
         delay(d);
@@ -237,7 +238,7 @@ public auto timer() {
 enum int MAX_EVENTS = 500;
 shared long inited;
 
-public void startloop() nothrow @trusted
+public void initPhoton() nothrow @trusted
 {
     auto s = atomicFetchAdd(inited, 1);
     if (s != 0) return;

@@ -80,7 +80,7 @@ void main(string[] args) {
     int[][] socks = new int[][](NR, 2);
     string s1 = "first read write\n";
     string s2 = "second read write\n";
-    startloop();
+    initPhoton();
     for(int i = 0; i < NR; i++) {
         check(socketpair(AF_UNIX, SOCK_STREAM, 0, socks[i].ptr[0..2]));
         //logf("socks[i] = %s", i, socks[i]);
@@ -104,7 +104,7 @@ void main(string[] args) {
         auto a = socks[i][1];
         fiberPongPing(a, s1, s2);
     }
-    runFibers();
+    runScheduler();
     //
     foreach(w; wrs) {
         w.join();

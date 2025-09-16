@@ -21,7 +21,7 @@ import core.thread;
 
 void main()
 {
-	startloop();
+	initPhoton();
 	shared bool terminated = false;
 	go({
     	//  Socket to talk to clients
@@ -53,5 +53,5 @@ void main()
 			writefln("Received: %s #%s", cast(string)buffer, requestNbr);
 		}
 	});
-	runFibers();
+	runScheduler();
 }

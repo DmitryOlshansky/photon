@@ -18,7 +18,7 @@ import std.stdio, std.datetime;
 import photon;
 
 void main(){
-    startloop();
+    initPhoton();
     auto e = event(false);
     auto s = semaphore(0);
     delay(1.seconds);
@@ -28,5 +28,5 @@ void main(){
     go({
         delay(1.seconds);
     });
-    runFibers();
+    runScheduler();
 }

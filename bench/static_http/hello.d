@@ -59,7 +59,7 @@ void server() {
 }
 
 void main() {
-    startloop();
+    initPhoton();
     go(() => server());
-    runFibers();
+    runScheduler();
 }

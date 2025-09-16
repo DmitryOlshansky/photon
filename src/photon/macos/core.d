@@ -94,6 +94,7 @@ nothrow:
 }
 
 public struct Timer {
+@trusted:
     alias Callback = void delegate() @safe nothrow;
     void wait(Duration d) {
         delay(d);
@@ -266,7 +267,7 @@ int getCurrentKqueue() nothrow {
 }
 
 
-public void startloop()
+public void initPhoton() nothrow @trusted
 {
     auto s = atomicFetchAdd(inited, 1);
     if (s != 0) return;

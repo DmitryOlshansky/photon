@@ -19,7 +19,7 @@ import std.range, std.datetime, std.stdio;
 import photon;
 
 void main() {
-    startloop();
+    initPhoton();
     auto first = channel!(int)(2);
     auto second = channel!(string)(1);
     go({
@@ -41,5 +41,5 @@ void main() {
             );
         }
     });
-    runFibers();
+    runScheduler();
 }

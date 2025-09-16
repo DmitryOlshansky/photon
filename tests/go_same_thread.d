@@ -19,7 +19,7 @@ int placeholder;
 int placeholder2;
 
 void main(){
-    startloop();
+    initPhoton();
     placeholder = 4;
     goOnSameThread({
 		assert(placeholder == 4);
@@ -38,5 +38,5 @@ void main(){
 			writeln("Spawning inside of go is done");
 		});
 	});
-    runFibers();
+    runScheduler();
 }

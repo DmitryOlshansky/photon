@@ -20,7 +20,7 @@ import photon;
 
 
 void main() {
-    startloop();
+    initPhoton();
     shared int active;
     shared int closed;
     auto counts = pool(2, 1.seconds, () => atomicFetchAdd(active, 1), (ref int i) { atomicFetchAdd(closed, 1); });
@@ -49,5 +49,5 @@ void main() {
         counts.shutdown();
         writeln("after shutdown");
     });
-    runFibers();
+    runScheduler();
 }

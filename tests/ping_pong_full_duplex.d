@@ -58,7 +58,7 @@ void readerWriter(int fd1, int fd2) {
 
 void main() {
     int[2] socks1, socks2;
-    startloop();
+    initPhoton();
     check(socketpair(AF_UNIX, SOCK_STREAM, 0, socks1));
     check(socketpair(AF_UNIX, SOCK_STREAM, 0, socks2));
     logf("socks1 = %s", socks1);
@@ -70,7 +70,7 @@ void main() {
 
     // spawn fiber to read stuff
     go(() => readerWriter(socks1[1], socks2[1]));
-    runFibers();
+    runScheduler();
     //
     wr.join();
 }

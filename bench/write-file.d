@@ -9,7 +9,7 @@ static import std.conv;
 import photon;
 
 void main(){
-    startloop();
+    initPhoton();
     go({
         int fd = open("write.txt", O_RDWR | O_CREAT | O_TRUNC, std.conv.octal!644);
         if (fd < 0) {
@@ -22,5 +22,5 @@ void main(){
         if (r >= 0)
             writef("return  = %s\n", buf[0..r]);
     });
-    runFibers();
+    runScheduler();
 }

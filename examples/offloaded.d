@@ -36,7 +36,7 @@ long fib(long n) {
 }
 
 void main() {
-    startloop();
+    initPhoton();
     go({
         goOnSameThread({
             writeln("Blocking computation");
@@ -68,5 +68,5 @@ void main() {
             writeln("Fib(15):", offload(() => fib(15)));
         });
     });
-    runFibers();
+    runScheduler();
 }

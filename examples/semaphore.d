@@ -15,7 +15,7 @@ import core.thread;
 import core.time;
 
 void main() {
-    startloop();
+    initPhoton();
     shared Semaphore sem = semaphore(0);
     void waitingTask(int n) {
         go({
@@ -38,6 +38,6 @@ void main() {
         sem.trigger(1);
         writeln("Main fiber exited!");
     });
-    runFibers();
+    runScheduler();
     sem.dispose();
 }

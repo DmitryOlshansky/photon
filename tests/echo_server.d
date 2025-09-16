@@ -26,7 +26,6 @@ import std.range;
 import core.thread;
 
 import photon;
-import photon.support : logf;
 
 // telnet localhost 1337
 void server_worker(Socket client) {
@@ -35,7 +34,7 @@ void server_worker(Socket client) {
         client.shutdown(SocketShutdown.BOTH);
         client.close();
     }
-    logf("Started server_worker, client = %s", client);
+    writefln("Started server_worker, client = %s", client);
     for(;;) {
         ptrdiff_t received = client.receive(buffer);
         if (received < 0) {
@@ -46,7 +45,7 @@ void server_worker(Socket client) {
             return;
         }
         else {
-            logf("Server_worker received:\n<%s>", cast(char[])buffer[0.. received]);
+            writefln("Server_worker received:\n<%s>", cast(char[])buffer[0.. received]);
         }
         ptrdiff_t sent;
         do {
@@ -66,20 +65,20 @@ void server() {
     server.bind(new InternetAddress("127.0.0.1", 1337));
     server.listen(1000);
 
-    logf("Started server");
+    writefln("Started server");
     void processClient(Socket client) {
         go(() => server_worker(client));
     }
     while(true) {
-        logf("Waiting for server.accept()");
+        writefln("Waiting for server.accept()");
         Socket client = server.accept();
-        logf("New client accepted %s", client);
+        writefln("New client accepted %s", client);
         processClient(client);
     }
 }
 
 void main() {
-    startloop();
+    initPhoton();
     go(() => server());
-    runFibers();
+    runScheduler();
 }

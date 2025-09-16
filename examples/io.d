@@ -34,7 +34,7 @@ void read_a_lot() {
 }
 
 void main() {
-    startloop();
+    initPhoton();
     go({
         goOnSameThread({
             writeln("Starting to read a lot");
@@ -52,5 +52,5 @@ void main() {
             writeln("Done reading a lot #3");
         });
     });
-    runFibers();
+    runScheduler();
 }
