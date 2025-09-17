@@ -152,7 +152,9 @@ struct TimedFiber {
 
     void schedule(size_t numSched) {
         auto f = cast()steal(*fiber);
-        f.schedule(numSched, WAKE_TIMER);
+        if (f) {
+            f.schedule(numSched, WAKE_TIMER);
+        }
     }
 }
 
