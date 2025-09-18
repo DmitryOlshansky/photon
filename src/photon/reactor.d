@@ -72,6 +72,12 @@ class FiberExt : Fiber {
     SpinLock joinLock;
     FiberExt joiners;
     Throwable thr;
+    struct FlsEntry {
+        void* pointer;
+        void function(void*) dtor;
+    }
+    FlsEntry[] fls;
+    static size_t flsOffset;
     
     this(void function() fn, uint numSched) nothrow {
         super(fn, 2<<20);
@@ -133,6 +139,31 @@ class FiberExt : Fiber {
             joiners.schedule(numSched, WAKE_JOIN);
         }
         joinLock.unlock();
+    }
+
+    static size_t flsAlloc() {
+        auto offset = flsOffset++;
+        return offset;
+    }
+
+    void* flsGet(size_t offset, void* initValue, size_t size, void function(void*) dtor) {
+        if (fls.length <= offset) {
+            fls.length = offset + 1;
+        }
+        if (fls[offset].pointer is null) {
+            fls[offset].pointer = new void[size].ptr;
+            fls[offset].pointer[0..size] = initValue[0..size];
+            fls[offset].dtor = dtor;
+        }
+        return fls[offset].pointer;
+    }
+
+    void destroyFls() {
+        foreach (ref e; fls) {
+            if (e.pointer) {
+                e.dtor(e.pointer);
+            }
+        }
     }
 }
 
@@ -265,6 +296,7 @@ TimedFiber timerEntry(FiberExt* fiber, const timespec* ts) nothrow {
 package(photon) void schedulerEntry(size_t n)
 {
     void onTermination(FiberExt f) {
+        f.destroyFls();
         atomicOp!"-="(alive, 1);
         if (alive == 0) {
             foreach (i; 0..scheds.length) {

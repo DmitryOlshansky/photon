@@ -76,3 +76,36 @@ public:
 		return _fiber is other._fiber;
 	}
 }
+
+/// Task local storage
+version(Posix)
+struct TaskLocal(T) {
+private:
+	size_t offset = size_t.max;
+	T initial;
+
+	static void dtor(void* pointer) {
+		destroy(*cast(T*)pointer);
+	}
+public:	
+	this(T value) {
+		initial = value;
+	}
+
+	@disable this(this);
+
+	ref opAssign(T value) {
+		storage = value;
+	}
+
+	ref storage() {
+		size_t size = (T.sizeof + 0xf) & ~0xf;
+		if (offset == size_t.max) {
+			offset = FiberExt.flsAlloc();
+		}
+		void* data = currentFiber.flsGet(offset, &initial, size, &dtor);
+		return *cast(T*)data;
+	}
+
+	alias this = storage;
+}
