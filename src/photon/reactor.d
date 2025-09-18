@@ -472,7 +472,7 @@ ssize_t universalSyscall(size_t ident, string name, SyscallKind kind, Fcntl fcnt
         interceptFd!(fcntlStyle)(fd);
         shared(Descriptor)* descriptor = descriptors.ptr + fd;
         if (atomicLoad(descriptorStates[fd]) == DescriptorState.THREADPOOL) {
-            logf("%s syscall THREADPOLL FD=%d", name, fd);
+            logf("%s syscall THREADPOOL FD=%d", name, fd);
             return syscallOffload(ident, fd, args);
         }
     L_start:
@@ -787,8 +787,19 @@ extern(C) private int poll(pollfd *fds, nfds_t nfds, int timeout)
         if (nonBlockingCheck(result, timeout)) return result;
         FiberExt fiber = currentFiber;
         size_t events = numEvents();
-        AwaitingFiber[] waiters = (cast(AwaitingFiber*)calloc(events, AwaitingFiber.sizeof))[0..events];
-        scope(exit) free(waiters.ptr);
+        AwaitingFiber[2] stack;
+        bool heapAlloc = false;
+        AwaitingFiber[] waiters;
+        if (events < stack.length) {
+            waiters = stack[0..events];
+        } else {
+            heapAlloc = true;
+            waiters = (cast(AwaitingFiber*)calloc(events, AwaitingFiber.sizeof))[0..events];
+        }
+        scope(exit) {
+            if (heapAlloc)
+                free(waiters.ptr);
+        }
         foreach (ref af; waiters) {
             af.fiber = cast(shared)&fiber;
         }
