@@ -4,7 +4,7 @@
         "name" : "hello",
         "dependencies": {
             "photon": { "path" : "../.." },
-            "photon-http": "0.5.5"
+            "photon-http": "0.5.6"
         }
     }
 +/
@@ -34,27 +34,31 @@ void server_worker(Socket client) {
 }
 
 void server() {
-    Socket server = new TcpSocket();
-    server.setOption(SocketOptionLevel.SOCKET, SocketOption.REUSEADDR, true);
-    server.bind(new InternetAddress("0.0.0.0", 8080));
-    server.listen(1000);
+    try {
+        Socket server = new TcpSocket();
+        server.setOption(SocketOptionLevel.SOCKET, SocketOption.REUSEADDR, true);
+        server.bind(new InternetAddress("0.0.0.0", 8080));
+        server.listen(1000);
 
-    debug writeln("Started server");
+        debug writeln("Started server");
 
-    void processClient(Socket client) {
-        go(() => server_worker(client));
-    }
-
-    while(true) {
-        try {
-            debug writeln("Waiting for server.accept()");
-            Socket client = server.accept();
-            debug writeln("New client accepted");
-            processClient(client);
+        void processClient(Socket client) {
+            go(() => server_worker(client));
         }
-        catch(Exception e) {
-            writefln("Failure to accept %s", e);
+
+        while(true) {
+            try {
+                debug writeln("Waiting for server.accept()");
+                Socket client = server.accept();
+                debug writeln("New client accepted");
+                processClient(client);
+            }
+            catch(Exception e) {
+                writefln("Failure to accept %s", e);
+            }
         }
+    } catch (Exception e) {
+        stderr.writefln("Got exception while setting up the server: %s", e);
     }
 }
 
