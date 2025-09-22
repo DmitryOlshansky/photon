@@ -15,9 +15,6 @@
 module examples.join;
 
 import photon;
-version(Windows) {
-    void main(){}
-} else version(Posix) {
 
 void main() {
     initPhoton();
@@ -39,6 +36,4 @@ void main() {
         }
     });
     runScheduler();
-}
-
 }

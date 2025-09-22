@@ -23,6 +23,7 @@ import mecca.time_queue;
 import photon.ds.common;
 import photon.ds.intrusive_queue;
 import photon.windows.support;
+import photon.task;
 import photon.threadpool;
 
 shared struct RawEvent {
@@ -291,6 +292,8 @@ class FiberExt : Fiber {
     Throwable thr;
     size_t fastPathSkip;
     size_t fastPathSkipAck;
+    SpinLock joinLock;
+    FiberExt joiners;
 
     enum PAGESIZE = 4096;
     
@@ -314,11 +317,20 @@ class FiberExt : Fiber {
     }
 
     void join() shared {
-        assert(false);
+        this.unshared.join();
     }
 
     void join() {
-        assert(false);
+        assert(currentFiber);
+        bool suspend = false;
+        joinLock.lock();
+        if (state != Fiber.State.TERM) {
+            joiners = currentFiber;
+            suspend = true;
+        }
+        joinLock.unlock();
+        if (suspend) yield();
+        if (thr) throw thr;
     }
 
     void joinNothrow() nothrow shared {
@@ -326,7 +338,25 @@ class FiberExt : Fiber {
     }
 
     void joinNothrow() nothrow {
-        assert(false);
+        assert(currentFiber);
+        bool suspend = false;
+        joinLock.lock();
+        if (state != Fiber.State.TERM) {
+            joiners = currentFiber;
+            suspend = true;
+        }
+        joinLock.unlock();
+        if (suspend) yield();
+        // skips rethrowing exception
+    }
+
+    void wakeUpJoiners(size_t numSched) {
+        joinLock.lock();
+        FiberExt f = joiners;
+        if (joiners) {
+            joiners.schedule(numSched, WAKE_JOIN);
+        }
+        joinLock.unlock();
     }
 }
 
@@ -383,12 +413,12 @@ public void initPhoton() {
 }
 
 /// Convenience overload for functions
-public void go(void function() func) {
-    go({ func(); });
+public Task go(void function() func) {
+    return go({ func(); });
 }
 
 /// Setup a fiber task to run on the Photon scheduler.
-public void go(void delegate() func) {
+public Task go(void delegate() func) {
     import std.random;
     uint choice;
     if (scheds.length == 1) choice = 0;
@@ -407,16 +437,17 @@ public void go(void delegate() func) {
     logf("Assigned %x -> %d scheduler", cast(void*)f, choice);
     f.schedule(choice, WAKE_TRIGGER);
     notifyEventloop(choice);
+    return Task(f);
 }
 
 /// Convenience overload for goOnSameThread that accepts functions 
-public void goOnSameThread(void function() func) {
-    goOnSameThread({ func(); });
+public Task goOnSameThread(void function() func) {
+    return goOnSameThread({ func(); });
 }
 
 /// Same as go but make sure the fiber is scheduled on the same thread of the threadpool.
 /// Could be useful if there is a need to propagate TLS variable.
-public void goOnSameThread(void delegate() func) {
+public Task goOnSameThread(void delegate() func) {
     auto choice = currentFiber !is null ? currentFiber.numScheduler : 0;
     atomicOp!"+="(scheds[choice].assigned, 1);
     atomicOp!"+="(alive, 1);
@@ -424,6 +455,7 @@ public void goOnSameThread(void delegate() func) {
     logf("Assigned %x -> %d / %d scheduler", cast(void*)f, choice, scheds.length);
     f.schedule(choice, WAKE_TRIGGER);
     notifyEventloop(choice);
+    return Task(f);
 }
 
 package(photon) void schedulerEntry(size_t n)
