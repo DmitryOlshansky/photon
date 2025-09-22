@@ -18,9 +18,7 @@ class WorkItem {
     }
 
     void done() {
-        version (Windows)
-            fiber.schedule();
-        else version(FreeBSD)
+        version(FreeBSD)
             fiber.schedule();
         else
             fiber.schedule(size_t.max, WAKE_TRIGGER); // schedule from "remote scheduler"

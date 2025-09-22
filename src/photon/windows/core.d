@@ -57,7 +57,7 @@ struct MultiAwaitBox {
 
 extern(Windows) VOID waitCallback(PTP_CALLBACK_INSTANCE Instance, PVOID Context, PTP_WAIT  Wait, TP_WAIT_RESULT WaitResult) {
     auto fiber = cast(FiberExt)Context;
-    fiber.schedule();
+    fiber.schedule(size_t.max, WAKE_TRIGGER);
 }
 
 
@@ -66,8 +66,7 @@ extern(Windows) VOID waitAnyCallback(PTP_CALLBACK_INSTANCE Instance, PVOID Conte
     auto fiber = cast()steal(await.box.fiber);
     if (fiber) {
         logf("AwaitAny callback waking up on %d object", await.n);
-        fiber.wakeUpObject = await.n;
-        fiber.schedule();
+        fiber.schedule(size_t.max, await.n);
     }
     else {
         logf("AwaitAny callback - triggering awaitable again");
@@ -213,7 +212,7 @@ public auto semaphore(int count) {
 
 extern(Windows) VOID timerCallback(PTP_CALLBACK_INSTANCE Instance, PVOID Context, PTP_TIMER Timer) {
     FiberExt fiber = cast(FiberExt)Context;
-    fiber.schedule();
+    fiber.schedule(size_t.max, WAKE_TIMER);
 }
 
 ///
@@ -278,10 +277,16 @@ if (allSatisfy!(isAwaitable, Awaitable)) {
     return currentFiber.wakeUpObject;
 }
 
+// fiber wakeup is due to an active FD or one of the following reasons
+enum int WAKE_TRIGGER = -1;
+enum int WAKE_TIMER = -2;
+enum int WAKE_JOIN = -3;
+
+
 struct SchedulerBlock {
     shared IntrusiveQueue!(FiberExt, RawEvent) queue;
     shared uint assigned;
-    size_t[1] padding;
+    HANDLE iocp; // IO Completion port
 }
 static assert(SchedulerBlock.sizeof == 64);
 
@@ -292,6 +297,9 @@ class FiberExt : Fiber {
     uint numScheduler;
     int bytesTransfered;
     int wakeUpObject;
+    Throwable thr;
+    size_t fastPathSkip;
+    size_t fastPathSkipAck;
 
     enum PAGESIZE = 4096;
     
@@ -305,9 +313,13 @@ class FiberExt : Fiber {
         numScheduler = numSched;
     }
 
-    void schedule() nothrow
+    void schedule(size_t from, int wake) nothrow
     {
+        wakeUpObject = wake;
         scheds[numScheduler].queue.push(this);
+        if (from != numScheduler) {
+            notifyEventloop(numScheduler);
+        }
     }
 
     void join() shared {
@@ -327,13 +339,11 @@ class FiberExt : Fiber {
     }
 }
 
-package(photon) shared SchedulerBlock[] scheds;
+shared SchedulerBlock[] scheds;
 
 enum MAX_THREADPOOL_SIZE = 100;
 FiberExt currentFiber;
 __gshared Map!(SOCKET, FiberExt) ioWaiters = new Map!(SOCKET, FiberExt); // mapping of sockets to awaiting fiber
-__gshared RawEvent termination; // termination event, triggered once last fiber exits
-__gshared HANDLE iocp; // IO Completion port
 __gshared PTP_POOL threadPool; // for synchronious syscalls
 __gshared TP_CALLBACK_ENVIRON_V3 environ; // callback environment for the pool
 shared int alive; // count of non-terminated Fibers scheduled
@@ -350,6 +360,8 @@ public void initPhoton() {
     scheds = new SchedulerBlock[threads];
     foreach(ref sched; scheds) {
         sched.queue = IntrusiveQueue!(FiberExt, RawEvent)(RawEvent(0));
+        sched.iocp = cast(shared)CreateIoCompletionPort(cast(HANDLE)INVALID_HANDLE_VALUE, null, 0, 1);
+        wenforce(sched.iocp != null, "Failed to create IO Completion Port");
     }
     threadPool = CreateThreadpool(null);
     wenforce(threadPool != null, "Failed to create threadpool");
@@ -357,11 +369,6 @@ public void initPhoton() {
     wenforce(SetThreadpoolThreadMinimum(threadPool, 1) == TRUE, "Failed to set threadpool minimum size");
     InitializeThreadpoolEnvironment(&environ);
     SetThreadpoolCallbackPool(&environ, threadPool);
-
-    termination = RawEvent(false);
-    iocp = CreateIoCompletionPort(cast(HANDLE)INVALID_HANDLE_VALUE, null, 0, 1);
-    wenforce(iocp != null, "Failed to create IO Completion Port");
-    wenforce(CreateThread(null, 0, &eventLoop, null, 0, null) != null, "Failed to start event loop");
     initWorkQueues(threads);
 }
 
@@ -388,7 +395,8 @@ public void go(void delegate() func) {
     atomicOp!"+="(alive, 1);
     auto f = new FiberExt(func, choice);
     logf("Assigned %x -> %d scheduler", cast(void*)f, choice);
-    f.schedule();
+    f.schedule(choice, WAKE_TRIGGER);
+    notifyEventloop(choice);
 }
 
 /// Convenience overload for goOnSameThread that accepts functions 
@@ -404,16 +412,27 @@ public void goOnSameThread(void delegate() func) {
     atomicOp!"+="(alive, 1);
     auto f = new FiberExt(func, choice);
     logf("Assigned %x -> %d / %d scheduler", cast(void*)f, choice, scheds.length);
-    f.schedule();
+    f.schedule(choice, WAKE_TRIGGER);
+    notifyEventloop(choice);
 }
 
 package(photon) void schedulerEntry(size_t n)
 {
+    void onTermination(FiberExt f) {
+        //f.destroyFls();
+        atomicOp!"-="(alive, 1);
+        if (alive == 0) {
+            foreach (i; 0..scheds.length) {
+                notifyEventloop(i);
+            }
+        }
+        logf("Fiber %s terminated", cast(void*)f);
+        //f.wakeUpJoiners(n);
+    }
     // TODO: handle NUMA case
     wenforce(SetThreadAffinityMask(GetCurrentThread(), 1L<<n), "failed to set affinity");
     shared SchedulerBlock* sched = scheds.ptr + n;
     while (alive > 0) {
-        sched.queue.event.waitAndReset();
         for(;;) {
             FiberExt f = sched.queue.drain();
             if (f is null) break; // drained an empty queue, time to sleep
@@ -423,59 +442,56 @@ package(photon) void schedulerEntry(size_t n)
                 logf("Fiber %x started", cast(void*)f);
                 try {
                     f.call();
+                    if (f.state == FiberExt.State.TERM) {
+                        onTermination(f);
+                    }
+                }
+                catch (Exception e) {
+                    f.thr = e;
+                    onTermination(f);
                 }
                 catch (Throwable e) {
                     stderr.writeln(e);
-                    atomicOp!"-="(alive, 1);
-                }
-                if (f.state == FiberExt.State.TERM) {
-                    logf("Fiber %s terminated", cast(void*)f);
-                    atomicOp!"-="(alive, 1);
+                    abort();
                 }
                 f = next;
             } while(f !is null);
         }
+        processEventsEntry(n);
     }
-    termination.trigger();
-    foreach (ref s; scheds) {
-        s.queue.event.trigger();
+    foreach (i; 0..scheds.length) {
+        notifyEventloop(i);
     }
 }
 
 enum int MAX_COMPLETIONS = 500;
 
-extern(Windows) uint eventLoop(void* param) {
-    HANDLE[2] events;
-    events[0] = iocp;
-    events[1] = cast(HANDLE)termination.ev;
-    logf("Started event loop! IOCP = %x termination = %x", iocp, termination.ev);
-    for (;;) {
-        auto ret = WaitForMultipleObjects(2, events.ptr, FALSE, INFINITE);
-        logf("Got signalled in event loop %d", ret);
-        if (ret == WAIT_OBJECT_0) { // iocp
-            OVERLAPPED_ENTRY[MAX_COMPLETIONS] entries = void;
-            uint count = 0;
-            while(GetQueuedCompletionStatusEx(iocp, entries.ptr, MAX_COMPLETIONS, &count, 0, FALSE)) {
-                logf("Dequeued I/O events=%d", count);
-                foreach (e; entries[0..count]) {
-                    SOCKET sock = cast(SOCKET)e.lpCompletionKey;
-                    FiberExt fiber = ioWaiters[sock];
-                    fiber.bytesTransfered = cast(int)e.dwNumberOfBytesTransferred;
-                    fiber.schedule();
-                }
-                if (count < MAX_COMPLETIONS) break;
+void processEventsEntry(size_t n) {
+    OVERLAPPED_ENTRY[MAX_COMPLETIONS] entries = void;
+    uint count = 0;
+    while(GetQueuedCompletionStatusEx(cast(HANDLE)scheds[n].iocp, entries.ptr, MAX_COMPLETIONS, &count, 0, FALSE)) {
+        logf("Dequeued I/O events=%d", count);
+        foreach (e; entries[0..count]) {
+            if (e.lpCompletionKey == 0) {
+                continue; // user event to wake up event loop
             }
+            SOCKET sock = cast(SOCKET)e.lpCompletionKey;
+            auto fiber = ioWaiters[sock];
+            // handle cases where data was available right away
+            if (fiber.fastPathSkip != fiber.fastPathSkipAck) {
+                fiber.fastPathSkipAck++;
+                continue;
+            }
+            fiber.bytesTransfered = cast(int)e.dwNumberOfBytesTransferred;
+            fiber.schedule(n, WAKE_TRIGGER);
         }
-        else if (ret == WAIT_OBJECT_0 + 1) { // termination
-            break;
-        }
-        else {
-            logf("Failed to wait for multiple objects: %x", ret);
-            break;
-        }
+        if (count < MAX_COMPLETIONS) break;
     }
-    ExitThread(0);
-    return 0;
+}
+
+void notifyEventloop(size_t n) nothrow {
+    HANDLE iocp = cast(HANDLE)scheds[n].iocp;
+    PostQueuedCompletionStatus(iocp, 0, 0, null);
 }
 
 
@@ -506,7 +522,7 @@ extern(Windows) VOID acceptJob(PTP_CALLBACK_INSTANCE Instance, PVOID Context, PT
         registerSocket(resp);
     }
     state.socket = resp;
-    state.fiber.schedule();
+    state.fiber.schedule(size_t.max, WAKE_TRIGGER);
 }
 
 extern(Windows) SOCKET accept(SOCKET s, sockaddr* addr, LPINT addrlen) {
@@ -525,7 +541,7 @@ extern(Windows) SOCKET accept(SOCKET s, sockaddr* addr, LPINT addrlen) {
 }
 
 void registerSocket(SOCKET s) {
-    HANDLE port = iocp;
+    HANDLE port = cast(HANDLE)scheds[currentFiber.numScheduler].iocp;
     wenforce(CreateIoCompletionPort(cast(void*)s, port, cast(size_t)s, 0) == port, "failed to register I/O completion");
 }
 
@@ -537,7 +553,7 @@ extern(Windows) int recv(SOCKET s, void* buf, int len, int flags) {
     int ret = WSARecv(s, &wsabuf, 1, &received, cast(uint*)&flags, cast(LPWSAOVERLAPPED)&overlapped, null);
     logf("Got recv %d", ret);
     if (ret >= 0) {
-        FiberExt.yield();
+        currentFiber.fastPathSkip++;
         return received;
     }
     else {
@@ -560,7 +576,7 @@ extern(Windows) int send(SOCKET s, void* buf, int len, int flags) {
     int ret = WSASend(s, &wsabuf, 1, &sent, flags, cast(LPWSAOVERLAPPED)&overlapped, null);
     logf("Get send %d", ret);
     if (ret >= 0) {
-        FiberExt.yield();
+        currentFiber.fastPathSkip++;
         return sent;
     }
     else {
