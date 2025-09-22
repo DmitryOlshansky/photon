@@ -16,7 +16,7 @@ extern(Windows) SOCKET WSASocketW(
   int                type,
   int                protocol,
   void*              lpProtocolInfo,
-  WORD               g,
+  DWORD              g,
   DWORD              dwFlags
 ) nothrow;
 

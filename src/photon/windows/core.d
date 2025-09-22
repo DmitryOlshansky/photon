@@ -501,8 +501,7 @@ void notifyEventloop(size_t n) nothrow {
 
 extern(Windows) SOCKET socket(int af, int type, int protocol) {
     logf("Intercepted socket!");
-    SOCKET s = WSASocketW(af, type, protocol, null, 0, WSA_FLAG_OVERLAPPED);
-    registerSocket(s);
+    SOCKET s = cast(SOCKET)WSASocketW(af, type, protocol, null, 0, WSA_FLAG_OVERLAPPED);
     return s;
 }
 
@@ -518,9 +517,7 @@ extern(Windows) VOID acceptJob(PTP_CALLBACK_INSTANCE Instance, PVOID Context, PT
     AcceptState* state = cast(AcceptState*)Context;
     logf("Started threadpool job");
     SOCKET resp = WSAAccept(state.socket, state.addr, state.addrlen, null, 0);
-    if (resp != INVALID_SOCKET) {
-        registerSocket(resp);
-    }
+    logf("Got accept response %s", resp);
     state.socket = resp;
     state.fiber.schedule(size_t.max, WAKE_TRIGGER);
 }
@@ -532,6 +529,10 @@ extern(Windows) SOCKET accept(SOCKET s, sockaddr* addr, LPINT addrlen) {
     state.addr = addr;
     state.addrlen = addrlen;
     state.fiber = currentFiber;
+    if (s !in ioWaiters) {
+        registerSocket(s);
+    }
+    ioWaiters[s] = currentFiber;
     PTP_WORK work = CreateThreadpoolWork(&acceptJob, &state, &environ);
     wenforce(work != null, "Failed to create work for threadpool");
     SubmitThreadpoolWork(work);
@@ -548,6 +549,9 @@ void registerSocket(SOCKET s) {
 extern(Windows) int recv(SOCKET s, void* buf, int len, int flags) {
     OVERLAPPED overlapped;
     WSABUF wsabuf = WSABUF(cast(uint)len, buf);
+    if (s !in ioWaiters) {
+        registerSocket(s);
+    }
     ioWaiters[s] = currentFiber;
     uint received = 0;
     int ret = WSARecv(s, &wsabuf, 1, &received, cast(uint*)&flags, cast(LPWSAOVERLAPPED)&overlapped, null);
@@ -571,6 +575,9 @@ extern(Windows) int recv(SOCKET s, void* buf, int len, int flags) {
 extern(Windows) int send(SOCKET s, void* buf, int len, int flags) {
     OVERLAPPED overlapped;
     WSABUF wsabuf = WSABUF(cast(uint)len, buf);
+    if (s !in ioWaiters) {
+        registerSocket(s);
+    }
     ioWaiters[s] = currentFiber;
     uint sent = 0;
     int ret = WSASend(s, &wsabuf, 1, &sent, flags, cast(LPWSAOVERLAPPED)&overlapped, null);
