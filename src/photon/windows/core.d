@@ -233,8 +233,24 @@ public auto timer() {
 
 ///
 public void delay(Duration req) {
-    auto tm = Timer(); // Stateless on Windows
-    tm.wait(req);
+    if (currentFiber !is null) {
+        FiberExt fiber = currentFiber;
+        auto tm = timerEntry(&fiber, req);
+        timeQueue.insert(&tm);
+        FiberExt.yield();
+    } else {
+        SleepEx(cast(int)req.total!"msecs", FALSE);
+    }
+}
+
+///
+public void yield() {
+    if (currentFiber !is null) {
+        currentFiber.schedule(currentFiber.numScheduler, WAKE_TRIGGER);
+        FiberExt.yield();
+    } else {
+        Thread.yield();
+    }
 }
 
 /// 

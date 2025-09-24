@@ -22,7 +22,8 @@ import photon;
 
 
 void task(string msg, Duration duration) {
-    Thread.sleep(duration);
+    Thread.sleep(duration / 2);
+    delay(duration / 2);
     writeln(msg);
 }
 

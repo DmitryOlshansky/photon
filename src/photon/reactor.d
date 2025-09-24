@@ -411,6 +411,16 @@ if (is(T : const timespec*) || is(T : Duration)) {
     }
 }
 
+///
+public void yield() {
+    if (currentFiber !is null) {
+        currentFiber.schedule(currentFiber.numScheduler, WAKE_TRIGGER);
+        FiberExt.yield();
+    } else {
+        Thread.yield();
+    }
+}
+
 template Unshared(T) {
     static if (is(T: shared(U), U)) {
         alias Unshared = U;
