@@ -547,6 +547,70 @@ void notifyEventloop(size_t n) nothrow {
 
 
 // ===========================================================================
+// FAST SOCKETS
+// ===========================================================================
+
+__gshared RIO_EXTENSION_FUNCTION_TABLE rio;
+
+class FastSocket {
+    this() {
+        
+    }
+}
+
+struct Buffer {
+    RIO_BUF buf;
+    
+    this(RIO_BUF rioBuf) {
+        buf = rioBuf;
+    }
+
+    this(ubyte[] source) {
+        auto id = rio.RIORegisterBuffer(cast(CHAR*)source.ptr, cast(uint)source.length);
+        buf.BufferId = id;
+        buf.Offset = 0;
+        buf.Length = cast(uint)source.length;
+    }
+
+    bool empty() { return buf.Length == 0; }
+
+    Buffer opIndex(size_t from, size_t to)
+    {
+        return Buffer(RIO_BUF(buf.BufferId, cast(uint)(buf.Offset + from), cast(uint)(to - from)));
+    }
+
+    void dispose() {
+        rio.RIODeregisterBuffer(buf.BufferId);
+    }
+}
+
+void initFastSockets() {
+    GUID guid = WSAID_MULTIPLE_RIO;
+    auto sock = WSASocketW(AF_INET, SOCK_STREAM, IPPROTO_TCP, null, 0, WSA_FLAG_REGISTERED_IO | WSA_FLAG_OVERLAPPED);
+    wenforce(sock != INVALID_SOCKET);
+    stderr.writeln("sock = ", sock);
+    DWORD bytesReturned = 0;
+    int result = WSAIoctl(
+        sock,
+        SIO_GET_MULTIPLE_EXTENSION_FUNCTION_POINTER,
+        &guid,
+        guid.sizeof,
+        &rio,
+        rio.sizeof,
+        &bytesReturned,
+        null,
+        null
+    );
+    if (result != 0) {
+        stderr.writeln("Error: ", GetLastError());
+    }
+    assert(result == 0);
+    closesocket(sock);
+}
+
+
+
+// ===========================================================================
 // INTERCEPTS
 // ===========================================================================
 
