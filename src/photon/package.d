@@ -98,6 +98,16 @@ public Task goOnSameThread(void function() func) @safe;
     This avoids blocking event loop on computationally intensive tasks.
 */
 T offload(T)(T delegate() work) @trusted;
+
+/**
+    Suspend the current fiber or thread for req amount of time.
+    Note the resolution of wait is in milliseconds, a delay of zero will still yield the execution.
+*/
+public void delay(Duration req);
+
+/// Yields the execution of current fiber or thread
+public void yield();
+
 }
 
 /// Number of threads running the scheduler loop
