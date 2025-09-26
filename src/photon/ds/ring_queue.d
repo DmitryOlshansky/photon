@@ -4,6 +4,8 @@ import core.atomic;
 import core.internal.spinlock;
 import core.stdc.stdlib;
 import core.lifetime;
+import core.memory;
+import std.traits;
 
 import photon.exceptions;
 
@@ -21,6 +23,9 @@ struct RingQueue(T, Event)
     this(size_t capacity, Event cts, Event rtr)
     {
         store = cast(T*)malloc(T.sizeof * capacity);
+        static if (hasIndirections!T) {
+            GC.addRange(store, T.sizeof * capacity);
+        }
         length = capacity;
         size = 0;
         fetch = insert = 0;
@@ -114,6 +119,9 @@ auto allocRingQueue(T, Event)(size_t capacity, Event cts, Event rtr){
 }
 
 void disposeRingQueue(T, Event)(RingQueue!(T, Event)* q) {
+    static if (hasIndirections!T) {
+        GC.removeRange(q.store);
+    }
     free(q.store);
     free(q);
 }
