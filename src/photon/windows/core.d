@@ -58,6 +58,19 @@ struct MultiAwaitBox {
     shared FiberExt fiber;
 }
 
+struct AwaitingFiber {
+    shared FiberExt* fiber;
+    AwaitingFiber* next;
+    AwaitingFiber* prev;
+    
+    nothrow void schedule(size_t sched, int wakeFd) {
+        auto f = cast()steal(*fiber);
+        if (f !is null) {
+            f.schedule(sched, wakeFd);
+        }
+    }
+}
+
 extern(Windows) VOID waitCallback(PTP_CALLBACK_INSTANCE Instance, PVOID Context, PTP_WAIT  Wait, TP_WAIT_RESULT WaitResult) {
     auto fiber = cast(FiberExt)Context;
     fiber.schedule(size_t.max, WAKE_TRIGGER);
@@ -127,6 +140,14 @@ nothrow:
 
     void trigger() shared {
         this.unshared.trigger();
+    }
+
+    void dispose() {
+        CloseHandle(ev);
+    }
+
+    void dispose() shared {
+        this.unshared.dispose();
     }
     
 private:
@@ -405,7 +426,10 @@ TimedFiber timerEntry(FiberExt* fiber, Duration delay) nothrow {
     return TimedFiber(cast(shared)fiber, TscTimePoint.hardNow() + delay);
 }
 
+shared bool inited;
+
 public void initPhoton() {
+    if (!cas(&inited, false, true)) return;
     SYSTEM_INFO info;
     GetSystemInfo(&info);
     // TODO: handle NUMA case

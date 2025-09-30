@@ -65,6 +65,8 @@ import std.meta;
 
 import photon.ds.common;
 import photon.ds.ring_queue;
+import mecca.containers.lists;
+
 
 public import photon.core;
 public import photon.threadpool;
@@ -191,7 +193,6 @@ auto mutex() @trusted nothrow {
 }
 
 ///
-version(Posix)
 unittest {
     initPhoton();
     auto mtx = mutex();
@@ -326,7 +327,6 @@ auto recursiveMutex() @trusted nothrow {
 }
 
 
-version(Posix)
 unittest {
     static void testTryLock(alias createM)(int lockTimes) {
         initPhoton();
@@ -364,7 +364,6 @@ unittest {
     testTryLock!(recursiveMutex)(3);
 }
 
-version(Posix)
 unittest {
     enum ITERS = 1000;
     enum COUNT = 10;
@@ -401,7 +400,6 @@ unittest {
     testMutex!(RecursiveMutex, recursiveMutex)(ITERS, COUNT, LOCK_CNT, JOBS);
 }
 
-version(Posix)
 public struct Condition {
 nothrow:
 @trusted:
