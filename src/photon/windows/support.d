@@ -262,7 +262,7 @@ enum SIO_GET_EXTENSION_FUNCTION_POINTER  = _WSAIORW(IOC_WS2,6);
 enum SIO_GET_MULTIPLE_EXTENSION_FUNCTION_POINTER = _WSAIORW(IOC_WS2, 36);
 /* 8509e081-96dd-4005-b165-9e2ee8c79e3f */ 
 enum WSAID_MULTIPLE_RIO = GUID(0x8509e081,0x96dd,0x4005,[0xb1,0x65,0x9e,0x2e,0xe8,0xc7,0x9e,0x3f]);
-    
+enum WSAID_ACCEPTEX = GUID(0xb5367df1,0xcbac,0x11cf,[0x95,0xca,0x00,0x80,0x5f,0x48,0xa1,0x92]);
 
 struct RIO_EXTENSION_FUNCTION_TABLE {
   DWORD                         cbSize;
@@ -419,4 +419,15 @@ alias LPFN_RIODEREGISTERBUFFER = VOID function(
 
 alias LPFN_RIONOTIFY = INT function(
   RIO_CQ CQ
+);
+
+alias LPFN_ACCEPTEX = BOOL function(
+  SOCKET       sListenSocket,
+  SOCKET       sAcceptSocket,
+  PVOID        lpOutputBuffer,
+  DWORD        dwReceiveDataLength,
+  DWORD        dwLocalAddressLength,
+  DWORD        dwRemoteAddressLength,
+  LPDWORD      lpdwBytesReceived,
+  LPOVERLAPPED lpOverlapped
 );

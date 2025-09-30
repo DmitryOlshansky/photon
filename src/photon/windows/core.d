@@ -551,14 +551,95 @@ void notifyEventloop(size_t n) nothrow {
 // ===========================================================================
 
 __gshared RIO_EXTENSION_FUNCTION_TABLE rio;
+__gshared LPFN_ACCEPTEX AcceptEx;
 
 class FastSocket {
     this() {
-        
+        sock = WSASocketW(AF_INET, SOCK_STREAM, IPPROTO_TCP, null, 0, WSA_FLAG_REGISTERED_IO | WSA_FLAG_OVERLAPPED);
+        wenforce(sock != INVALID_SOCKET);
     }
+
+    void bind(const(sockaddr)* addr, socklen_t namelen) {
+        wenforce(.bind(sock, addr, namelen) != SOCKET_ERROR);
+    }
+
+    void setsockopt(int level, int optname, const(void)* optvalue, socklen_t optlen) {
+        wenforce(.setsockopt(sock, level, optname, optvalue, optlen) != SOCKET_ERROR);
+    }
+
+    void listen(int backlog) {
+        wenforce(.listen(sock, backlog) == 0);
+    }
+
+    FastSocket accept() {
+        ubyte[128] buf = void;
+        DWORD bytesRecieved = 0;
+        if (sock !in ioWaiters) {
+            ioWaiters[sock] = currentFiber;
+            registerSocket(sock);
+        }
+        OVERLAPPED overlapped;
+        FastSocket accepted = new FastSocket();
+        BOOL ret = AcceptEx(
+            sock,
+            accepted.sock,
+            buf.ptr,
+            0,
+            32,
+            32,
+            &bytesRecieved,
+            &overlapped
+        );
+        wenforce(WSAGetLastError() == ERROR_IO_PENDING || ret);
+        FiberExt.yield();
+        return accepted;
+    }
+
+    int send(RioBuffer buf) {
+        if (!rq) {
+           setupSocket();
+           ioWaiters[sock] = currentFiber;
+        }
+        wenforce(rio.RIOSend(rq, &buf.buf, 1, 0, cast(void*)this));
+        FiberExt.yield();
+        RIORESULT result;
+        wenforce(rio.RIODequeueCompletion(cq, &result, 1) == 1);
+        return result.BytesTransferred;
+    }
+
+    int receive(RioBuffer buf) {
+        if (!rq) {
+           setupSocket();
+           ioWaiters[sock] = currentFiber;
+        }
+        wenforce(rio.RIOReceive(rq, &buf.buf, 1, 0, cast(void*)this));
+        FiberExt.yield();
+        RIORESULT result;
+        wenforce(rio.RIODequeueCompletion(cq, &result, 1) == 1);
+        return result.BytesTransferred;
+    }
+
+private:
+    void setupSocket() {
+        RIO_NOTIFICATION_COMPLETION compl;
+        compl.IocpHandle = cast(HANDLE)scheds[currentFiber.numScheduler].iocp;
+        compl.CompletionKey = cast(void*)sock;
+        compl.Overlapped = &overlapped;
+        compl.Type = RIO_NOTIFICATION_COMPLETION_TYPE.RIO_IOCP_COMPLETION;
+        cq = rio.RIOCreateCompletionQueue(2, &compl);
+        wenforce(cq);
+        wenforce(rio.RIONotify(cq) == ERROR_SUCCESS);
+        rq = rio.RIOCreateRequestQueue(sock,  1, 1, 1, 1, cq, cq, cast(void*)this);
+        wenforce(rq);
+    }
+
+    RIO_RQ rq;
+    RIO_CQ cq;
+    OVERLAPPED overlapped;
+    SOCKET sock;
 }
 
-struct Buffer {
+struct RioBuffer {
     RIO_BUF buf;
     
     this(RIO_BUF rioBuf) {
@@ -574,9 +655,9 @@ struct Buffer {
 
     bool empty() { return buf.Length == 0; }
 
-    Buffer opIndex(size_t from, size_t to)
+    RioBuffer opSlice(size_t from, size_t to)
     {
-        return Buffer(RIO_BUF(buf.BufferId, cast(uint)(buf.Offset + from), cast(uint)(to - from)));
+        return RioBuffer(RIO_BUF(buf.BufferId, cast(uint)(buf.Offset + from), cast(uint)(to - from)));
     }
 
     void dispose() {
@@ -588,7 +669,6 @@ void initFastSockets() {
     GUID guid = WSAID_MULTIPLE_RIO;
     auto sock = WSASocketW(AF_INET, SOCK_STREAM, IPPROTO_TCP, null, 0, WSA_FLAG_REGISTERED_IO | WSA_FLAG_OVERLAPPED);
     wenforce(sock != INVALID_SOCKET);
-    stderr.writeln("sock = ", sock);
     DWORD bytesReturned = 0;
     int result = WSAIoctl(
         sock,
@@ -606,6 +686,21 @@ void initFastSockets() {
     }
     assert(result == 0);
     closesocket(sock);
+    sock = WSASocketW(AF_INET, SOCK_STREAM, IPPROTO_TCP, null, 0, WSA_FLAG_REGISTERED_IO | WSA_FLAG_OVERLAPPED);
+    wenforce(sock != INVALID_SOCKET);
+    auto acceptExGuid = WSAID_ACCEPTEX;
+    result = WSAIoctl(
+        sock,
+        SIO_GET_EXTENSION_FUNCTION_POINTER,
+        &acceptExGuid,
+        acceptExGuid.sizeof,
+        &AcceptEx,
+        AcceptEx.sizeof,
+        &bytesReturned,
+        null,
+        null
+    );
+    assert(result == 0);
 }
 
 
