@@ -479,12 +479,10 @@ public:
 }
 
 /// Create a conditional variable
-version(Posix)
 auto condition() @trusted nothrow {
     return cast(shared)Condition.init;
 }
 
-version(Posix)
 unittest {
     void simpleCondTest(alias signal, alias wait)() {
         initPhoton();
@@ -534,7 +532,6 @@ unittest {
     simpleCondTest!((ref cnd) => cnd.broadcast(), (ref cnd, ref mtx) => cnd.wait(mtx, 100.msecs));
 }
 
-version(Posix)
 unittest {
     initPhoton();
     auto cond = condition();
