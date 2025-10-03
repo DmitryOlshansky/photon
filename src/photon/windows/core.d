@@ -1,7 +1,8 @@
 module photon.windows.core;
- import core.sys.posix.time;
+ 
 version(Windows):
 package(photon):
+import core.sys.posix.time;
 import core.sys.posix.fcntl;
 import core.sys.windows.winnt;
 import core.stdc.errno;
@@ -13,6 +14,7 @@ import core.internal.spinlock;
 import std.exception;
 import std.windows.syserror;
 import core.stdc.stdlib;
+import core.stdc.string;
 import std.random;
 import std.stdio;
 import std.traits;
@@ -76,7 +78,7 @@ struct AwaitingFiber {
 }
 
 extern(Windows) VOID waitCallback(PTP_CALLBACK_INSTANCE Instance, PVOID Context, PTP_WAIT  Wait, TP_WAIT_RESULT WaitResult) {
-    auto fiber = cast(FiberExt)Context;
+    auto fiber = cast(FiberExt*)Context;
     fiber.schedule(size_t.max, WAKE_TRIGGER);
 }
 
@@ -111,7 +113,8 @@ nothrow:
 
     /// Wait for the event to be triggered, then reset and return atomically
     void waitAndReset() {
-        auto wait = CreateThreadpoolWait(&waitCallback, cast(void*)currentFiber, &environ);
+        FiberExt fiber = currentFiber;
+        auto wait = CreateThreadpoolWait(&waitCallback, cast(void*)&fiber, &environ);
         checked(wait != null, "Failed to create threadpool wait object");
         SetThreadpoolWait(wait, cast(HANDLE)ev, null);
         FiberExt.yield();
@@ -184,7 +187,8 @@ nothrow:
     
     /// 
     void wait() {
-        auto wait = CreateThreadpoolWait(&waitCallback, cast(void*)currentFiber, &environ);
+        FiberExt fiber = currentFiber;
+        auto wait = CreateThreadpoolWait(&waitCallback, cast(void*)&fiber, &environ);
         checked(wait != null, "Failed to create threadpool wait object");
         SetThreadpoolWait(wait, cast(HANDLE)sem, null);
         FiberExt.yield();
@@ -518,7 +522,7 @@ package(photon) void schedulerEntry(size_t n)
             }
         }
         logf("Fiber %s terminated", cast(void*)f);
-        //f.wakeUpJoiners(n);
+        f.wakeUpJoiners(n);
     }
     // TODO: handle NUMA case
     wenforce(SetThreadAffinityMask(GetCurrentThread(), 1L<<n), "failed to set affinity");
@@ -632,8 +636,18 @@ HANDLE freeFd(int fd) nothrow {
     fdsLock.lock();
     scope(exit) fdsLock.unlock();
     auto h = fds[fd-1];
-    fds[fd] = INVALID_HANDLE_VALUE;
+    fds[fd-1] = INVALID_HANDLE_VALUE;
     return h;
+}
+
+timespec fileTimeToUnix(FILETIME ft) nothrow {
+    ULARGE_INTEGER ui;
+    ui.LowPart = ft.dwLowDateTime;
+    ui.HighPart = ft.dwHighDateTime;
+    ui.QuadPart -= 116_444_736_000_000_000L;
+    long sec = ui.QuadPart / 10_000_000L;
+    int nsec = (ui.QuadPart % 10_000_000) * 100;
+    return timespec(sec, nsec);
 }
 
 public @trusted nothrow {
@@ -648,7 +662,7 @@ public @trusted nothrow {
     alias ino_t = ulong;
     alias off_t = long;
     struct timespec {
-        time_t tv_sec;
+        long   tv_sec;
         int    tv_nsec;
     }
 
@@ -705,7 +719,19 @@ public @trusted nothrow {
     }
 
     extern(C) int fstat(int fd, stat_t* st) {
-        return -1;
+        HANDLE h = fromFd(fd);
+        BY_HANDLE_FILE_INFORMATION fileInfo;
+        if (!GetFileInformationByHandle(h, &fileInfo)) return -1;
+        memset(st, 0, stat_t.sizeof);
+        st.st_size = (cast(long)fileInfo.nFileSizeHigh << 32) + fileInfo.nFileSizeLow;
+        st.st_mode = _S_IREAD;
+        if (!(fileInfo.dwFileAttributes & FILE_ATTRIBUTE_READONLY)) {
+            st.st_mode |= _S_IWRITE;
+        }
+        st.st_atim = fileTimeToUnix(fileInfo.ftLastAccessTime);
+        st.st_mtim = fileTimeToUnix(fileInfo.ftLastWriteTime);
+        st.st_ctim = fileTimeToUnix(fileInfo.ftCreationTime);
+        return 0;
     }
 
     extern(C) ptrdiff_t pwrite(int fd, const(void) *buf, size_t count, ulong offset) {
