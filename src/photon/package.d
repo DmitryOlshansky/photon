@@ -65,6 +65,8 @@ import std.meta;
 
 import photon.ds.common;
 import photon.ds.ring_queue;
+import mecca.containers.lists;
+
 
 public import photon.core;
 public import photon.threadpool;
@@ -191,7 +193,6 @@ auto mutex() @trusted nothrow {
 }
 
 ///
-version(Posix)
 unittest {
     initPhoton();
     auto mtx = mutex();
@@ -326,7 +327,6 @@ auto recursiveMutex() @trusted nothrow {
 }
 
 
-version(Posix)
 unittest {
     static void testTryLock(alias createM)(int lockTimes) {
         initPhoton();
@@ -352,7 +352,7 @@ unittest {
                 }
                 assert(!m.locked());
             });
-            delay(10.msecs);
+            delay(100.msecs);
             m.unlock();
             ev.trigger();
         });
@@ -364,7 +364,6 @@ unittest {
     testTryLock!(recursiveMutex)(3);
 }
 
-version(Posix)
 unittest {
     enum ITERS = 1000;
     enum COUNT = 10;
@@ -401,7 +400,6 @@ unittest {
     testMutex!(RecursiveMutex, recursiveMutex)(ITERS, COUNT, LOCK_CNT, JOBS);
 }
 
-version(Posix)
 public struct Condition {
 nothrow:
 @trusted:
@@ -481,12 +479,10 @@ public:
 }
 
 /// Create a conditional variable
-version(Posix)
 auto condition() @trusted nothrow {
     return cast(shared)Condition.init;
 }
 
-version(Posix)
 unittest {
     void simpleCondTest(alias signal, alias wait)() {
         initPhoton();
@@ -536,7 +532,6 @@ unittest {
     simpleCondTest!((ref cnd) => cnd.broadcast(), (ref cnd, ref mtx) => cnd.wait(mtx, 100.msecs));
 }
 
-version(Posix)
 unittest {
     initPhoton();
     auto cond = condition();
