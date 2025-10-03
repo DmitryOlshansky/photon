@@ -787,13 +787,17 @@ public @trusted nothrow {
             }
             overlapped.hEvent = ev;
         }
-        if (!WriteFile(h, buf, cast(uint)count, null, &overlapped) && GetLastError() != ERROR_IO_PENDING) {
-            return -1;
-        }
+        
         if (currentFiber) {
+            if (!WriteFileEx(h, buf, cast(uint)count, &overlapped, null)) {
+                return -1;
+            }
             FiberExt.yield();
             return currentFiber.bytesTransfered;
         } else {
+            if (!WriteFile(h, buf, cast(uint)count, null, &overlapped) && GetLastError() != ERROR_IO_PENDING) {
+                return -1;
+            }
             WaitForSingleObject(ev, INFINITE);
             return count;
         }
@@ -820,11 +824,12 @@ public @trusted nothrow {
             }
             overlapped.hEvent = ev;
         }
-        if (!ReadFile(h, buf, cast(uint)count, null, &overlapped) && GetLastError() != ERROR_IO_PENDING) return -1;
         if (currentFiber) {
+            if (!ReadFileEx(h, buf, cast(uint)count, &overlapped, null)) return -1;
             FiberExt.yield();
             return currentFiber.bytesTransfered;
         } else {
+            if (!ReadFile(h, buf, cast(uint)count, null, &overlapped) && GetLastError() != ERROR_IO_PENDING) return -1;
             WaitForSingleObject(ev, INFINITE);
             return count;
         }
