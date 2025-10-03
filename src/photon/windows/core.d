@@ -1,5 +1,4 @@
 module photon.windows.core;
- 
 version(Windows):
 package(photon):
 import core.sys.posix.time;
@@ -721,15 +720,17 @@ public @trusted nothrow {
             access |= GENERIC_READ;
         if (flags & O_WRONLY)
             access |= GENERIC_WRITE;
+        if (flags & O_RDWR)
+            access |= GENERIC_READ | GENERIC_WRITE;
         DWORD disposition = 0;
-        if (flags & O_CREAT) {
-            disposition = CREATE_NEW;
-        } else if(flags & O_TRUNC) {
+        if(flags & O_TRUNC) {
             disposition = CREATE_ALWAYS;
+        } else if (flags & O_CREAT) {
+            disposition = CREATE_NEW;
         } else {
             disposition = OPEN_EXISTING;
         }
-        HANDLE file = offload(() => CreateFileA(path, access, 0, null, disposition, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, null));
+        HANDLE file = offload(() => CreateFileA(path, access, FILE_SHARE_READ | FILE_SHARE_WRITE, null, disposition, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, null));
         if (file == INVALID_HANDLE_VALUE) {
             _errno = cast(int)GetLastError();
             return -1;
@@ -766,35 +767,67 @@ public @trusted nothrow {
     }
 
     extern(C) ptrdiff_t pwrite(int fd, const(void) *buf, size_t count, ulong offset) {
+        static HANDLE ev = INVALID_HANDLE_VALUE;
         auto h = fromFd(fd);
         OVERLAPPED overlapped;
         overlapped.Offset = offset & 0xffff_ffff;
         overlapped.OffsetHigh = offset >> 32;
-        if (-fd in fileWaiters) {
-            try {
-                registerFile(fd, h);
-            } catch(Exception e) { assert(false, e.msg); }
+        if (currentFiber) {
+            if (-fd !in fileWaiters) {
+                try {
+                    registerFile(fd, h);
+                } catch(Exception e) {
+                    assert(false, e.msg);
+                }
+            }
             fileWaiters[-fd] = currentFiber;
+        } else {
+            if (ev == INVALID_HANDLE_VALUE) {
+                ev = cast(HANDLE)CreateEventA(null, FALSE, FALSE, null);
+            }
+            overlapped.hEvent = ev;
         }
-        if (!WriteFileEx(h, buf, cast(uint)count, &overlapped, null)) return -1;
-        FiberExt.yield();
-        return currentFiber.bytesTransfered;
+        if (!WriteFile(h, buf, cast(uint)count, null, &overlapped) && GetLastError() != ERROR_IO_PENDING) {
+            return -1;
+        }
+        if (currentFiber) {
+            FiberExt.yield();
+            return currentFiber.bytesTransfered;
+        } else {
+            WaitForSingleObject(ev, INFINITE);
+            return count;
+        }
     }
 
     extern(C) ptrdiff_t pread(int fd, void *buf, size_t count, ulong offset) {
+        static HANDLE ev = INVALID_HANDLE_VALUE;
         auto h = fromFd(fd);
         OVERLAPPED overlapped;
         overlapped.Offset = offset & 0xffff_ffff;
         overlapped.OffsetHigh = offset >> 32;
-        if (-fd in fileWaiters) {
-            try {
-                registerFile(fd, h);
-            } catch(Exception e) { assert(false, e.msg); }
+        if (currentFiber) {
+            if (-fd !in fileWaiters) {
+                try {
+                    registerFile(fd, h);
+                } catch(Exception e) { 
+                    assert(false, e.msg); 
+                }
+            }
             fileWaiters[-fd] = currentFiber;
+        } else {
+            if (ev == INVALID_HANDLE_VALUE) {
+                ev = cast(HANDLE)CreateEventA(null, FALSE, FALSE, null);
+            }
+            overlapped.hEvent = ev;
         }
-        if (!ReadFileEx(h, buf, cast(uint)count, &overlapped, null)) return -1;
-        FiberExt.yield();
-        return currentFiber.bytesTransfered;
+        if (!ReadFile(h, buf, cast(uint)count, null, &overlapped) && GetLastError() != ERROR_IO_PENDING) return -1;
+        if (currentFiber) {
+            FiberExt.yield();
+            return currentFiber.bytesTransfered;
+        } else {
+            WaitForSingleObject(ev, INFINITE);
+            return count;
+        }
     }
 
     extern(C) int close(int fd) {
