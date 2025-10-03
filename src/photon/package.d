@@ -352,7 +352,7 @@ unittest {
                 }
                 assert(!m.locked());
             });
-            delay(10.msecs);
+            delay(100.msecs);
             m.unlock();
             ev.trigger();
         });

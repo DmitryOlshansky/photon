@@ -78,7 +78,6 @@ public:
 }
 
 /// Task local storage
-version(Posix)
 struct TaskLocal(T) {
 private:
 	size_t offset = size_t.max;

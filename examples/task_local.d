@@ -13,8 +13,6 @@
 	"name": "task_local"
 }
 +/
-version(Windows) {}
-else:
 import core.atomic;
 import photon;
 

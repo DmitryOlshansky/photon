@@ -341,6 +341,12 @@ class FiberExt : Fiber {
     size_t fastPathSkipAck;
     SpinLock joinLock;
     FiberExt joiners;
+    struct FlsEntry {
+        void* pointer;
+        void function(void*) dtor;
+    }
+    FlsEntry[] fls;
+    static size_t flsOffset;
 
     enum PAGESIZE = 4096;
     
@@ -404,6 +410,31 @@ class FiberExt : Fiber {
             joiners.schedule(numSched, WAKE_JOIN);
         }
         joinLock.unlock();
+    }
+
+    static size_t flsAlloc() {
+        auto offset = flsOffset++;
+        return offset;
+    }
+
+    void* flsGet(size_t offset, void* initValue, size_t size, void function(void*) dtor) {
+        if (fls.length <= offset) {
+            fls.length = offset + 1;
+        }
+        if (fls[offset].pointer is null) {
+            fls[offset].pointer = new void[size].ptr;
+            fls[offset].pointer[0..size] = initValue[0..size];
+            fls[offset].dtor = dtor;
+        }
+        return fls[offset].pointer;
+    }
+
+    void destroyFls() {
+        foreach (ref e; fls) {
+            if (e.pointer) {
+                e.dtor(e.pointer);
+            }
+        }
     }
 }
 
@@ -514,7 +545,7 @@ public Task goOnSameThread(void delegate() func) {
 package(photon) void schedulerEntry(size_t n)
 {
     void onTermination(FiberExt f) {
-        //f.destroyFls();
+        f.destroyFls();
         atomicOp!"-="(alive, 1);
         if (alive == 0) {
             foreach (i; 0..scheds.length) {
