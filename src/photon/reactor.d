@@ -141,7 +141,7 @@ class FiberExt : Fiber {
         joinLock.unlock();
     }
 
-    static size_t flsAlloc() {
+    static size_t flsAlloc() nothrow {
         auto offset = flsOffset++;
         return offset;
     }
