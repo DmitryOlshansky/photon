@@ -439,7 +439,8 @@ public:
             bool success = false;
             if (currentFiber.wakeFd == WAKE_TIMER) {
                 splk.lock();
-                this.unshared.waiters.remove(&await);
+                if (await.next != null)
+                    this.unshared.waiters.remove(&await);
                 splk.unlock();
             } else {
                 timeQueue.cancel(&tm);
