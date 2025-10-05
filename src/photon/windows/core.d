@@ -555,7 +555,7 @@ package(photon) void schedulerEntry(size_t n)
         f.wakeUpJoiners(n);
     }
     // TODO: handle NUMA case
-    wenforce(SetThreadAffinityMask(GetCurrentThread(), 1L<<n), "failed to set affinity");
+    //wenforce(SetThreadAffinityMask(GetCurrentThread(), cast(size_t)(1L<<n)) != 0, "failed to set affinity");
     shared SchedulerBlock* sched = scheds.ptr + n;
     timeQueue.open(100.usecs);
     while (alive > 0) {
@@ -592,9 +592,6 @@ package(photon) void schedulerEntry(size_t n)
         }
         processEventsEntry(n, timeQueue.timeTillNextEntry(t));
     }
-    foreach (i; 0..scheds.length) {
-        notifyEventloop(i);
-    }
 }
 
 enum int MAX_COMPLETIONS = 500;
@@ -602,9 +599,9 @@ enum int MAX_COMPLETIONS = 500;
 void processEventsEntry(size_t n, Duration wait) {
     OVERLAPPED_ENTRY[MAX_COMPLETIONS] entries = void;
     uint count = 0;
-    uint ms = wait > 10.hours ? 0 : cast(uint) wait.total!"msecs";
+    uint ms = wait > 10.hours ? INFINITE  : cast(uint) wait.total!"msecs";
     while(GetQueuedCompletionStatusEx(cast(HANDLE)scheds[n].iocp, entries.ptr, MAX_COMPLETIONS, &count, ms, FALSE)) {
-        logf("Dequeued I/O events=%d", count);
+        logf("Dequeued I/O scheduler %d events=%d", n, count);
         foreach (e; entries[0..count]) {
             if (e.lpCompletionKey == 0) {
                 continue; // user event to wake up event loop

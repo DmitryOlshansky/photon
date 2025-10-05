@@ -652,22 +652,24 @@ auto channel(T)(size_t capacity = 1) @safe {
     return cast(shared)Channel!T(capacity);
 }
 
+///
 unittest {
-    import std.range.primitives, std.traits;
-    import std.algorithm;
-    static assert(isInputRange!(Channel!int));
-    static assert(isInputRange!(Unqual!(shared Channel!int)));
-    static assert(isOutputRange!(shared Channel!int, int));
-    //
-    auto ch = channel!int(10);
-    foreach (i; 0..10){
-        ch.put(i);
-    }
-    ch.close();
-    auto sum = ch.sum;
-    assert(sum == 45);
+    runPhoton({
+        import std.range.primitives, std.traits;
+        import std.algorithm;
+        static assert(isInputRange!(Channel!int));
+        static assert(isInputRange!(Unqual!(shared Channel!int)));
+        static assert(isOutputRange!(shared Channel!int, int));
+        //
+        auto ch = channel!int(10);
+        foreach (i; 0..10){
+            ch.put(i);
+        }
+        ch.close();
+        auto sum = ch.sum;
+        assert(sum == 45);
+    });
 }
-
 
 
 /++
