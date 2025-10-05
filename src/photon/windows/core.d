@@ -524,13 +524,13 @@ public Task go(void delegate() func) @trusted nothrow {
 }
 
 /// Convenience overload for goOnSameThread that accepts functions 
-public Task goOnSameThread(void function() func) {
+public Task goOnSameThread(void function() func) nothrow @trusted {
     return goOnSameThread({ func(); });
 }
 
 /// Same as go but make sure the fiber is scheduled on the same thread of the threadpool.
 /// Could be useful if there is a need to propagate TLS variable.
-public Task goOnSameThread(void delegate() func) {
+public Task goOnSameThread(void delegate() func) nothrow @trusted {
     auto choice = currentFiber !is null ? currentFiber.numScheduler : 0;
     atomicOp!"+="(scheds[choice].assigned, 1);
     atomicOp!"+="(alive, 1);
