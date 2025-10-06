@@ -412,7 +412,7 @@ if (is(T : const timespec*) || is(T : Duration)) {
 }
 
 ///
-public void yield() {
+public void yield() @trusted nothrow {
     if (currentFiber !is null) {
         currentFiber.schedule(currentFiber.numScheduler, WAKE_TRIGGER);
         FiberExt.yield();
