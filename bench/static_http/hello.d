@@ -4,7 +4,7 @@
         "name" : "hello",
         "dependencies": {
             "photon": { "path" : "../.." },
-            "photon-http": "0.5.6"
+            "photon-http": "0.6.0"
         }
     }
 +/
