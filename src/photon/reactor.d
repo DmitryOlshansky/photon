@@ -392,6 +392,23 @@ public Task goOnSameThread(void delegate() func) nothrow @trusted {
     return Task(f);
 }
 
+/// Convenience overload for goOnAllThreads that accepts functions 
+public void goOnAllThreads(void function() func) nothrow @trusted {
+    goOnAllThreads({ func(); });
+}
+
+/// Schedules func on every available scheduler.
+/// Could be useful for explicit parallel computation.
+public void goOnAllThreads(void delegate() func) nothrow @trusted {
+    atomicOp!"+="(alive, scheds.length);
+    foreach (i; 0..scheds.length) {
+        atomicOp!"+="(scheds[i].assigned, 1);
+        auto f = new FiberExt(func, cast(uint)i);
+        logf("Assigned %x -> %d / %d scheduler", cast(void*)f, i, scheds.length);
+        f.schedule(i, WAKE_TRIGGER);
+        notifyEventloop(i);
+    }
+}
 
 /// Delay fiber execution by `req` duration.
 public nothrow @trusted void delay(T)(T req)
