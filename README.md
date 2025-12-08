@@ -5,7 +5,7 @@
 
 ## Intro
 
-Photon is a minimalistic multi-threaded fiber scheduler and event loop that works transparently with traditional blocking I/O C/C++/D/Rust libraries w/o degrading performance. For example one can run a multituide of downloads with `std.net.curl` with fibers, no blocking - it is as fast as threads but using less resources. Think of it as Golang style concurrency that is brought to D transparently.
+Photon is a minimalistic multi-threaded fiber scheduler and event loop that works transparently with traditional blocking I/O C/C++/D/Rust libraries w/o degrading performance. For example one can run a multitude of downloads with `std.net.curl` with fibers, no blocking - it is as fast as threads but using less resources. Think of it as Golang style concurrency that is brought to D transparently.
 
 Just like its particle cousin, Photon’s nature is dual, seeking to unify 2 different concepts (such as async and blocking I/O) in many ways:
 Fibers and Threads can be mixed and matched in a coherent way. 
