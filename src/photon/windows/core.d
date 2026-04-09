@@ -350,12 +350,12 @@ class FiberExt : Fiber {
     enum PAGESIZE = 4096;
     
     this(void function() fn, uint numSched) nothrow {
-        super(fn);
+        super(fn, 2<<20);
         numScheduler = numSched;
     }
 
     this(void delegate() dg, uint numSched) nothrow {
-        super(dg);
+        super(dg, 2<<20);
         numScheduler = numSched;
     }
 
