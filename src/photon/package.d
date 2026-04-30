@@ -599,7 +599,7 @@ public:
 
     /++
         Part of InputRange contract - checks if there is an item in the queue.
-        Returns `true` if channel is closed and its buffer is exhausted.
+        Returns: `true` if channel is closed and its buffer is exhausted.
     +/
     bool empty() {
         if (loaded) return false;
@@ -611,6 +611,26 @@ public:
         if (loaded) return false;
         loaded = buf.tryPop(item);
         return !loaded;
+    }
+
+    /++
+        Quick non-blocking check to see if there any item in the queue. Unlike `empty` doesn't block.
+        Returns: `true` if there is an item in the queue ready to be consumed
+    +/
+    bool ready() {
+        if(loaded) return true;
+        if(buf.readyToRead())
+            return !empty();
+        else
+            return false;
+    }
+
+    bool ready() shared {
+        if(loaded) return true;
+        if(buf.readyToRead())
+            return !empty();
+        else
+            return false;
     }
 
     /++
