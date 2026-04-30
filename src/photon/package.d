@@ -608,9 +608,7 @@ public:
     }
 
     bool empty() shared {
-        if (loaded) return false;
-        loaded = buf.tryPop(item);
-        return !loaded;
+        return this.unshared.empty;
     }
 
     /++
@@ -677,26 +675,38 @@ unittest {
     channel that becomes ready to read.
 +/
 void select(Args...)(auto ref Args args) @trusted
-if (allSatisfy!(isChannel, Even!Args) && allSatisfy!(isHandler, Odd!Args)) {
-    void delegate()[args.length/2] handlers = void;
+if (
+    (Args.length % 2 == 0 && allSatisfy!(isChannel, Even!Args) && allSatisfy!(isHandler, Odd!Args)) ||
+    (allSatisfy!(isChannel, Even!(Args[0..$-1])) && allSatisfy!(isHandler, Odd!(Args[0..$-1])) && isHandler!(Args[$-1]))
+) {
+    void delegate()[args.length / 2] handlers = void;
     Event*[args.length/2] events = void;
-    static foreach (i, v; args) {
+    alias paired = args[0 .. args.length - args.length % 2];
+    static foreach (i, v; paired) {
         static if(i % 2 == 0) {
             events[i/2] = &v.buf.rtr;
         }
         else {
-            handlers[i/2] = v;
+            static if (is(typeof(v) : void function())) {
+                import std.functional;
+                handlers[i/2] = v.toDelegate;
+            } else {
+                handlers[i/2] = v;
+            }
         }
     }
-    foreach (i, channel; Even!(args)) {
+    foreach (i, channel; Even!(paired)) {
         if (channel.buf.readyToRead())
             return handlers[i]();
+    }
+    static if (args.length % 2) {
+        return args[$-1]();
     }
     for (;;) {
         auto n = awaitAny(events[]);
     L_dispatch:
         switch(n) {
-            static foreach (i, channel; Even!(args)) {
+            static foreach (i, channel; Even!(paired)) {
                 case i:
                     if (channel.buf.readyToRead())
                         return handlers[n]();
@@ -711,7 +721,7 @@ if (allSatisfy!(isChannel, Even!Args) && allSatisfy!(isHandler, Odd!Args)) {
 /// Trait for testing if a type is Channel
 enum isChannel(T) = is(T == Channel!(V), V);
 
-enum isHandler(T) = is(T : void delegate());
+enum isHandler(T) = is(T : void delegate()) || is(T : void function());
 
 private template Even(T...) {
     static assert(T.length % 2 == 0);
