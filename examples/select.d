@@ -1,3 +1,4 @@
+#!/usr/bin/env dub
 /+ dub.json:
     {
 	"authors": [
@@ -30,6 +31,17 @@ void main() {
         second.put("ping");
     });
     go({
+        select(
+            first, { 
+                assert(false);
+            },
+            second, {
+                assert(false);
+            },
+            { // default
+                writefln("Got default");
+            }
+        );
         foreach ( _; 0..3) {
             select(
                 first, { 
