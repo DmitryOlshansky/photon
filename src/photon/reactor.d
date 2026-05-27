@@ -64,14 +64,63 @@ struct AwaitingFiber {
     }
 }
 
+class FiberJoiners {
+    ThreadInfo tidInfo;
+    bool terminated;
+    Throwable thr;
+    SpinLock joinLock;
+    FiberExt joiners;
+
+    void join() shared {
+        this.unshared.join();
+    }
+
+    void join() {
+        assert(currentFiber);
+        bool suspend = false;
+        joinLock.lock();
+        if (!terminated) {
+            joiners = currentFiber;
+            suspend = true;
+        }
+        joinLock.unlock();
+        if (suspend) yield();
+        if (thr) throw thr;
+    }
+
+    void joinNothrow() nothrow shared {
+        this.unshared.joinNothrow();
+    }
+
+    void joinNothrow() nothrow {
+        assert(currentFiber);
+        bool suspend = false;
+        joinLock.lock();
+        if (!terminated) {
+            joiners = currentFiber;
+            suspend = true;
+        }
+        joinLock.unlock();
+        if (suspend) yield();
+        // skips rethrowing exception
+    }
+
+    void wakeUpJoiners(size_t numSched) {
+        joinLock.lock();
+        terminated = true;
+        FiberExt f = joiners;
+        if (joiners) {
+            joiners.schedule(numSched, WAKE_JOIN);
+        }
+        joinLock.unlock();
+    }
+}
+
 class FiberExt : Fiber { 
     FiberExt next;
     uint numScheduler;
     int wakeFd; // recieves fd that woken us up
-    ThreadInfo tidInfo;
-    SpinLock joinLock;
-    FiberExt joiners;
-    Throwable thr;
+    FiberJoiners joiners;
     struct FlsEntry {
         void* pointer;
         void function(void*) dtor;
@@ -96,49 +145,6 @@ class FiberExt : Fiber {
         if (nsched != numScheduler) {
             notifyEventloop(numScheduler);
         }
-    }
-
-    void join() shared {
-        this.unshared.join();
-    }
-
-    void join() {
-        assert(currentFiber);
-        bool suspend = false;
-        joinLock.lock();
-        if (state != Fiber.State.TERM) {
-            joiners = currentFiber;
-            suspend = true;
-        }
-        joinLock.unlock();
-        if (suspend) yield();
-        if (thr) throw thr;
-    }
-
-    void joinNothrow() nothrow shared {
-        this.unshared.joinNothrow();
-    }
-
-    void joinNothrow() nothrow {
-        assert(currentFiber);
-        bool suspend = false;
-        joinLock.lock();
-        if (state != Fiber.State.TERM) {
-            joiners = currentFiber;
-            suspend = true;
-        }
-        joinLock.unlock();
-        if (suspend) yield();
-        // skips rethrowing exception
-    }
-
-    void wakeUpJoiners(size_t numSched) {
-        joinLock.lock();
-        FiberExt f = joiners;
-        if (joiners) {
-            joiners.schedule(numSched, WAKE_JOIN);
-        }
-        joinLock.unlock();
     }
 
     static size_t flsAlloc() nothrow {
@@ -304,7 +310,10 @@ package(photon) void schedulerEntry(size_t n)
             }
         }
         logf("Fiber %s terminated", cast(void*)f);
-        f.wakeUpJoiners(n);
+        auto joiners = f.joiners;
+        destroy(f);
+        joiners.wakeUpJoiners(n);
+
     }
 
     shared SchedulerBlock* sched = scheds.ptr + n;
@@ -331,7 +340,7 @@ package(photon) void schedulerEntry(size_t n)
                     }
                 }
                 catch (Exception e) {
-                    f.thr = e;
+                    f.joiners.thr = e;
                     onTermination(f);
                 }
                 catch (Throwable e) {

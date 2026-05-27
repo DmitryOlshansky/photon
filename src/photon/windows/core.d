@@ -328,45 +328,12 @@ struct SchedulerBlock {
 }
 static assert(SchedulerBlock.sizeof == 64);
 
-class FiberExt : Fiber { 
-    FiberExt next;
-    FiberExt back;
+class FiberJoiners {
     ThreadInfo tidInfo;
-    uint numScheduler;
-    int bytesTransfered;
-    int wakeFd;
+    bool terminated;
     Throwable thr;
-    size_t fastPathSkip;
-    size_t fastPathSkipAck;
     SpinLock joinLock;
     FiberExt joiners;
-    struct FlsEntry {
-        void* pointer;
-        void function(void*) dtor;
-    }
-    FlsEntry[] fls;
-    static size_t flsOffset;
-
-    enum PAGESIZE = 4096;
-    
-    this(void function() fn, uint numSched) nothrow {
-        super(fn, 2<<20);
-        numScheduler = numSched;
-    }
-
-    this(void delegate() dg, uint numSched) nothrow {
-        super(dg, 2<<20);
-        numScheduler = numSched;
-    }
-
-    void schedule(size_t from, int wake) nothrow
-    {
-        wakeFd = wake;
-        scheds[numScheduler].queue.push(this);
-        if (from != numScheduler) {
-            notifyEventloop(numScheduler);
-        }
-    }
 
     void join() shared {
         this.unshared.join();
@@ -376,7 +343,7 @@ class FiberExt : Fiber {
         assert(currentFiber);
         bool suspend = false;
         joinLock.lock();
-        if (state != Fiber.State.TERM) {
+        if (!terminated) {
             joiners = currentFiber;
             suspend = true;
         }
@@ -393,7 +360,7 @@ class FiberExt : Fiber {
         assert(currentFiber);
         bool suspend = false;
         joinLock.lock();
-        if (state != Fiber.State.TERM) {
+        if (!terminated) {
             joiners = currentFiber;
             suspend = true;
         }
@@ -404,11 +371,49 @@ class FiberExt : Fiber {
 
     void wakeUpJoiners(size_t numSched) {
         joinLock.lock();
+        terminated = true;
         FiberExt f = joiners;
         if (joiners) {
             joiners.schedule(numSched, WAKE_JOIN);
         }
         joinLock.unlock();
+    }
+}
+
+class FiberExt : Fiber { 
+    FiberExt next;
+    FiberExt back;
+    uint numScheduler;
+    int bytesTransfered;
+    int wakeFd;
+    FiberJoiners joiners;
+    struct FlsEntry {
+        void* pointer;
+        void function(void*) dtor;
+    }
+    FlsEntry[] fls;
+    static size_t flsOffset;
+
+    enum PAGESIZE = 4096;
+    
+    this(void function() fn, uint numSched) nothrow {
+        super(fn, 2<<20);
+        numScheduler = numSched;
+        joiners = new FiberJoiners;
+    }
+
+    this(void delegate() dg, uint numSched) nothrow {
+        super(dg, 2<<20);
+        numScheduler = numSched;
+        joiners = new FiberJoiners;
+    }
+
+    void schedule(size_t from, int wake) nothrow {
+        wakeFd = wake;
+        scheds[numScheduler].queue.push(this);
+        if (from != numScheduler) {
+            notifyEventloop(numScheduler);
+        }
     }
 
     static size_t flsAlloc() nothrow {
@@ -451,11 +456,18 @@ struct TimedFiber {
     }
 }
 
+class SocketBlock {
+    size_t fastPathSkip;
+    size_t fastPathSkipAck;
+    bool registered;
+    FiberExt current;
+}
+
 shared SchedulerBlock[] scheds;
 
 enum MAX_THREADPOOL_SIZE = 100;
 FiberExt currentFiber;
-__gshared Map!(SOCKET, FiberExt) ioWaiters = new Map!(SOCKET, FiberExt); // mapping of sockets to awaiting fiber
+__gshared Map!(SOCKET, SocketBlock) ioWaiters = new Map!(SOCKET, SocketBlock); // mapping of sockets to awaiting fiber
 __gshared Map!(int, FiberExt) fileWaiters = new Map!(int, FiberExt); // mapping of 'fd's to awaiting fiber, actually keyed by -fd to differ from SOCKET-s
 __gshared PTP_POOL threadPool; // for synchronious syscalls
 __gshared TP_CALLBACK_ENVIRON_V3 environ; // callback environment for the pool
@@ -525,7 +537,7 @@ public Task go(void delegate() func) @trusted nothrow {
     logf("Assigned %x -> %d scheduler", cast(void*)f, choice);
     f.schedule(choice, WAKE_TRIGGER);
     notifyEventloop(choice);
-    return Task(f);
+    return Task(f.joiners);
 }
 
 /// Convenience overload for goOnSameThread that accepts functions 
@@ -543,7 +555,7 @@ public Task goOnSameThread(void delegate() func) nothrow @trusted {
     logf("Assigned %x -> %d / %d scheduler", cast(void*)f, choice, scheds.length);
     f.schedule(choice, WAKE_TRIGGER);
     notifyEventloop(choice);
-    return Task(f);
+    return Task(f.joiners);
 }
 
 /// Convenience overload for goOnAllThreads that accepts functions 
@@ -575,7 +587,9 @@ package(photon) void schedulerEntry(size_t n)
             }
         }
         logf("Fiber %s terminated", cast(void*)f);
-        f.wakeUpJoiners(n);
+        auto joiners = f.joiners;
+        destroy(f);
+        joiners.wakeUpJoiners(n);
     }
     // TODO: handle NUMA case
     //wenforce(SetThreadAffinityMask(GetCurrentThread(), cast(size_t)(1L<<n)) != 0, "failed to set affinity");
@@ -603,7 +617,7 @@ package(photon) void schedulerEntry(size_t n)
                     }
                 }
                 catch (Exception e) {
-                    f.thr = e;
+                    f.joiners.thr = e;
                     onTermination(f);
                 }
                 catch (Throwable e) {
@@ -637,15 +651,13 @@ void processEventsEntry(size_t n, Duration wait) {
             }
             else {
                 SOCKET sock = cast(SOCKET)e.lpCompletionKey;
-                if (sock !in ioWaiters) {
-                    continue;
-                }
-                fiber = ioWaiters[sock];
+                auto w = ioWaiters[sock];
+                fiber = w.current;
                 logf("socket done socket=%d bytes=%d fast = %s", e.lpCompletionKey, 
-                    cast(int)e.dwNumberOfBytesTransferred, fiber.fastPathSkip != fiber.fastPathSkipAck);
+                    cast(int)e.dwNumberOfBytesTransferred, w.fastPathSkip != w.fastPathSkipAck);
                 // handle cases where data was available right away
-                if (fiber.fastPathSkip != fiber.fastPathSkipAck) {
-                    fiber.fastPathSkipAck++;
+                if (w.fastPathSkip != w.fastPathSkipAck) {
+                    w.fastPathSkipAck++;
                     continue;
                 }
                 fiber.bytesTransfered = cast(int)e.dwNumberOfBytesTransferred;
@@ -925,13 +937,18 @@ extern(Windows) int recv(SOCKET s, void* buf, int len, int flags) {
     WSABUF wsabuf = WSABUF(cast(uint)len, buf);
     uint received = 0;
     if (s !in ioWaiters) {
-        registerSocket(s);
+        ioWaiters[s] = new SocketBlock;
     }
-    ioWaiters[s] = currentFiber;
+    auto w = ioWaiters[s];
+    if (w.registered == false) {
+        registerSocket(s);
+        w.registered = true;
+    }
+    w.current = currentFiber;
     int ret = WSARecv(s, &wsabuf, 1, &received, cast(uint*)&flags, cast(LPWSAOVERLAPPED)&overlapped, null);
     logf("Got recv %d", ret);
     if (ret >= 0 && received > 0) {
-        currentFiber.fastPathSkip++;
+        w.fastPathSkip++;
         return received;
     }
     else {
@@ -952,27 +969,32 @@ public int recvWithTimeout(SOCKET s, void* buf, int len, int flags, Duration tim
     WSABUF wsabuf = WSABUF(cast(uint)len, buf);
     FiberExt fiber = currentFiber;
     if (s !in ioWaiters) {
-        registerSocket(s);
+        ioWaiters[s] = new SocketBlock;
     }
-    ioWaiters[s] = fiber;
+    auto w = ioWaiters[s];
+    if (w.registered == false) {
+        registerSocket(s);
+        w.registered = true;
+    }
+    w.current = currentFiber;
     auto entry = timerEntry(&fiber, timeout);
     timeQueue.insert(&entry);
     uint received = 0;
     int ret = WSARecv(s, &wsabuf, 1, &received, cast(uint*)&flags, cast(LPWSAOVERLAPPED)&overlapped, null);
     logf("Got recv %d", ret);
-    if (ret >= 0) {
+    if (ret >= 0 && received > 0) {
         timeQueue.cancel(&entry);
-        currentFiber.fastPathSkip++;
+        w.fastPathSkip++;
         return received;
     }
     else {
         auto lastError = GetLastError();
         logf("Last error = %d", lastError);
-        if (lastError == ERROR_IO_PENDING) {
+        if (lastError == ERROR_IO_PENDING || ret == 0) {
             FiberExt.yield();
             if (currentFiber.wakeFd == WAKE_TIMER) {
                 CancelIoEx(cast(HANDLE)s, &overlapped);
-                currentFiber.fastPathSkip++;
+                w.fastPathSkip++;
                 return -2;
             } else {
                 timeQueue.cancel(&entry);
@@ -988,20 +1010,25 @@ extern(Windows) int send(SOCKET s, void* buf, int len, int flags) {
     OVERLAPPED overlapped;
     WSABUF wsabuf = WSABUF(cast(uint)len, buf);
     if (s !in ioWaiters) {
-        registerSocket(s);
+        ioWaiters[s] = new SocketBlock;
     }
-    ioWaiters[s] = currentFiber;
+    auto w = ioWaiters[s];
+    if (w.registered == false) {
+        registerSocket(s);
+        w.registered = true;
+    }
+    w.current = currentFiber;
     uint sent = 0;
     int ret = WSASend(s, &wsabuf, 1, &sent, flags, cast(LPWSAOVERLAPPED)&overlapped, null);
     logf("Get send %d", ret);
-    if (ret >= 0) {
-        currentFiber.fastPathSkip++;
+    if (ret >= 0 && sent > 0) {
+        w.fastPathSkip++;
         return sent;
     }
     else {
         auto lastError = GetLastError();
         logf("Last error = %d", lastError);
-        if (lastError == ERROR_IO_PENDING) {
+        if (lastError == ERROR_IO_PENDING && ret == 0) {
             FiberExt.yield();
             return currentFiber.bytesTransfered;
         }
@@ -1011,7 +1038,7 @@ extern(Windows) int send(SOCKET s, void* buf, int len, int flags) {
 }
 
 extern(Windows) int closesocket(SOCKET s) {
-    ioWaiters.remove(s);
+    if (s in ioWaiters) ioWaiters[s].registered = false;
     return originalCloseSocket(s);
 }
 
