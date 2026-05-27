@@ -84,7 +84,7 @@ class FiberJoiners {
             suspend = true;
         }
         joinLock.unlock();
-        if (suspend) yield();
+        if (suspend) currentFiber.yield();
         if (thr) throw thr;
     }
 
@@ -101,7 +101,7 @@ class FiberJoiners {
             suspend = true;
         }
         joinLock.unlock();
-        if (suspend) yield();
+        if (suspend) currentFiber.yield();
         // skips rethrowing exception
     }
 

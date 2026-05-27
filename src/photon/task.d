@@ -54,11 +54,11 @@ public:
 		@property const(Tid) tid() const @trusted { return tidInfo.ident; }
 	}
 
-	T opCast(T)() const @safe nothrow if (is(T == bool)) { return _fiber !is null; }
-	T opCast(T)() const shared @safe nothrow if (is(T == bool)) { return _fiber !is null; }
+	T opCast(T)() const @safe nothrow if (is(T == bool)) { return _joiners !is null; }
+	T opCast(T)() const shared @safe nothrow if (is(T == bool)) { return _joiners !is null; }
 
-	void join() @trusted { if (_joiners) _joiners.unshared.join(); }
-	void joinUninterruptible() @trusted nothrow { if (_joiners) _joiners.unshared.joinNothrow(); }
+	void join() @trusted { if (_joiners) _joiners.join(); }
+	void joinUninterruptible() @trusted nothrow { if (_joiners) _joiners.joinNothrow(); }
 	void interrupt() @trusted nothrow { 
         //noop
     }
