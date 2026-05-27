@@ -380,7 +380,7 @@ public Task go(void delegate() func) nothrow @trusted  {
     logf("Assigned %x -> %d / %d scheduler", cast(void*)f, choice, scheds.length);
     f.schedule(choice, WAKE_TRIGGER);
     notifyEventloop(choice);
-    return Task(f);
+    return Task(f.joiners);
 }
 
 /// Convenience overload for goOnSameThread that accepts functions 
@@ -398,7 +398,7 @@ public Task goOnSameThread(void delegate() func) nothrow @trusted {
     logf("Assigned %x -> %d / %d scheduler", cast(void*)f, choice, scheds.length);
     f.schedule(choice, WAKE_TRIGGER);
     notifyEventloop(choice);
-    return Task(f);
+    return Task(f.joiners);
 }
 
 /// Convenience overload for goOnAllThreads that accepts functions 
