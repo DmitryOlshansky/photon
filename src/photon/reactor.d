@@ -131,11 +131,13 @@ class FiberExt : Fiber {
     this(void function() fn, uint numSched) nothrow {
         super(fn, 2<<20);
         numScheduler = numSched;
+        joiners = new FiberJoiners;
     }
 
     this(void delegate() dg, uint numSched) nothrow {
         super(dg, 2<<20);
         numScheduler = numSched;
+        joiners = new FiberJoiners;
     }
 
     void schedule(size_t nsched, int wakeFd) nothrow
