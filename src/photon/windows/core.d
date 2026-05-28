@@ -456,18 +456,17 @@ struct TimedFiber {
     }
 }
 
-class SocketBlock {
-    size_t fastPathSkip;
-    size_t fastPathSkipAck;
-    bool registered;
-    FiberExt current;
+struct Overlapped {
+    OVERLAPPED overlapped;
+    FiberExt fiber;
+    int bytes;
 }
 
 shared SchedulerBlock[] scheds;
 
 enum MAX_THREADPOOL_SIZE = 100;
 FiberExt currentFiber;
-__gshared Map!(SOCKET, SocketBlock) ioWaiters = new Map!(SOCKET, SocketBlock); // mapping of sockets to awaiting fiber
+__gshared Map!(SOCKET, bool) ioWaiters = new Map!(SOCKET, bool); // mapping of sockets to awaiting fiber
 __gshared Map!(int, FiberExt) fileWaiters = new Map!(int, FiberExt); // mapping of 'fd's to awaiting fiber, actually keyed by -fd to differ from SOCKET-s
 __gshared PTP_POOL threadPool; // for synchronious syscalls
 __gshared TP_CALLBACK_ENVIRON_V3 environ; // callback environment for the pool
@@ -651,16 +650,14 @@ void processEventsEntry(size_t n, Duration wait) {
             }
             else {
                 SOCKET sock = cast(SOCKET)e.lpCompletionKey;
-                auto w = ioWaiters[sock];
-                fiber = w.current;
-                logf("socket done socket=%d bytes=%d fast = %s", e.lpCompletionKey, 
-                    cast(int)e.dwNumberOfBytesTransferred, w.fastPathSkip != w.fastPathSkipAck);
-                // handle cases where data was available right away
-                if (w.fastPathSkip != w.fastPathSkipAck) {
-                    w.fastPathSkipAck++;
+                if (sock !in ioWaiters) {
                     continue;
                 }
-                fiber.bytesTransfered = cast(int)e.dwNumberOfBytesTransferred;
+                auto overlapped = cast(Overlapped*)e.lpOverlapped;
+                logf("socket done socket=%d bytes=%d", e.lpCompletionKey, 
+                    cast(int)e.dwNumberOfBytesTransferred);
+                overlapped.bytes = cast(int)e.dwNumberOfBytesTransferred;
+                fiber = overlapped.fiber;
             }
             fiber.schedule(n, WAKE_TRIGGER);
         }
@@ -923,6 +920,7 @@ extern(Windows) SOCKET accept(SOCKET s, sockaddr* addr, LPINT addrlen) {
 }
 
 void registerSocket(SOCKET s) {
+    ioWaiters[s] = true;
     HANDLE port = cast(HANDLE)scheds[currentFiber.numScheduler].iocp;
     wenforce(CreateIoCompletionPort(cast(void*)s, port, cast(size_t)s, 0) == port, "failed to register I/O completion");
 }
@@ -933,30 +931,27 @@ void registerFile(int fd, HANDLE h) {
 }
 
 extern(Windows) int recv(SOCKET s, void* buf, int len, int flags) {
-    OVERLAPPED overlapped;
+    Overlapped* overlapped = cast(Overlapped*)calloc(1, Overlapped.sizeof);
+    scope(exit) free(overlapped);
+    overlapped.fiber = currentFiber;
     WSABUF wsabuf = WSABUF(cast(uint)len, buf);
     uint received = 0;
     if (s !in ioWaiters) {
-        ioWaiters[s] = new SocketBlock;
-    }
-    auto w = ioWaiters[s];
-    if (w.registered == false) {
         registerSocket(s);
-        w.registered = true;
     }
-    w.current = currentFiber;
-    int ret = WSARecv(s, &wsabuf, 1, &received, cast(uint*)&flags, cast(LPWSAOVERLAPPED)&overlapped, null);
+    
+    int ret = WSARecv(s, &wsabuf, 1, &received, cast(uint*)&flags, cast(LPWSAOVERLAPPED)overlapped, null);
     logf("Got recv %d", ret);
     if (ret >= 0 && received > 0) {
-        w.fastPathSkip++;
-        return received;
+        FiberExt.yield();
+        return overlapped.bytes;
     }
     else {
         auto lastError = GetLastError();
         logf("Last error = %d", lastError);
         if (lastError == ERROR_IO_PENDING || ret == 0) {
             FiberExt.yield();
-            return currentFiber.bytesTransfered;
+            return overlapped.bytes;
         }
         else
             return ret;
@@ -965,27 +960,23 @@ extern(Windows) int recv(SOCKET s, void* buf, int len, int flags) {
 
 public int recvWithTimeout(SOCKET s, void* buf, int len, int flags, Duration timeout) {
     if (timeout == Duration.max) return recv(s, buf, len, flags);
-    OVERLAPPED overlapped;
+    Overlapped* overlapped = cast(Overlapped*)calloc(1, Overlapped.sizeof);
+    scope(exit) free(overlapped);
+    overlapped.fiber = currentFiber;
     WSABUF wsabuf = WSABUF(cast(uint)len, buf);
     FiberExt fiber = currentFiber;
     if (s !in ioWaiters) {
-        ioWaiters[s] = new SocketBlock;
-    }
-    auto w = ioWaiters[s];
-    if (w.registered == false) {
         registerSocket(s);
-        w.registered = true;
     }
-    w.current = currentFiber;
     auto entry = timerEntry(&fiber, timeout);
     timeQueue.insert(&entry);
     uint received = 0;
-    int ret = WSARecv(s, &wsabuf, 1, &received, cast(uint*)&flags, cast(LPWSAOVERLAPPED)&overlapped, null);
+    int ret = WSARecv(s, &wsabuf, 1, &received, cast(uint*)&flags, cast(LPWSAOVERLAPPED)overlapped, null);
     logf("Got recv %d", ret);
     if (ret >= 0 && received > 0) {
         timeQueue.cancel(&entry);
-        w.fastPathSkip++;
-        return received;
+        FiberExt.yield();
+        return overlapped.bytes;
     }
     else {
         auto lastError = GetLastError();
@@ -993,13 +984,13 @@ public int recvWithTimeout(SOCKET s, void* buf, int len, int flags, Duration tim
         if (lastError == ERROR_IO_PENDING || ret == 0) {
             FiberExt.yield();
             if (currentFiber.wakeFd == WAKE_TIMER) {
-                CancelIoEx(cast(HANDLE)s, &overlapped);
-                w.fastPathSkip++;
+                CancelIoEx(cast(HANDLE)s, cast(LPOVERLAPPED)overlapped);
+                FiberExt.yield();
                 return -2;
             } else {
                 timeQueue.cancel(&entry);
             }
-            return currentFiber.bytesTransfered;
+            return overlapped.bytes;
         }
         else
             return ret;
@@ -1007,30 +998,26 @@ public int recvWithTimeout(SOCKET s, void* buf, int len, int flags, Duration tim
 }
 
 extern(Windows) int send(SOCKET s, void* buf, int len, int flags) {
-    OVERLAPPED overlapped;
+    Overlapped* overlapped = cast(Overlapped*)calloc(1, Overlapped.sizeof);
+    scope(exit) free(overlapped);
+    overlapped.fiber = currentFiber;
     WSABUF wsabuf = WSABUF(cast(uint)len, buf);
     if (s !in ioWaiters) {
-        ioWaiters[s] = new SocketBlock;
-    }
-    auto w = ioWaiters[s];
-    if (w.registered == false) {
         registerSocket(s);
-        w.registered = true;
     }
-    w.current = currentFiber;
     uint sent = 0;
-    int ret = WSASend(s, &wsabuf, 1, &sent, flags, cast(LPWSAOVERLAPPED)&overlapped, null);
+    int ret = WSASend(s, &wsabuf, 1, &sent, flags, cast(LPWSAOVERLAPPED)overlapped, null);
     logf("Get send %d", ret);
     if (ret >= 0 && sent > 0) {
-        w.fastPathSkip++;
-        return sent;
+        FiberExt.yield();
+        return overlapped.bytes;
     }
     else {
         auto lastError = GetLastError();
         logf("Last error = %d", lastError);
-        if (lastError == ERROR_IO_PENDING && ret == 0) {
+        if (lastError == ERROR_IO_PENDING || ret == 0) {
             FiberExt.yield();
-            return currentFiber.bytesTransfered;
+            return overlapped.bytes;
         }
         else 
             return ret;
@@ -1038,7 +1025,7 @@ extern(Windows) int send(SOCKET s, void* buf, int len, int flags) {
 }
 
 extern(Windows) int closesocket(SOCKET s) {
-    if (s in ioWaiters) ioWaiters[s].registered = false;
+    ioWaiters.remove(s);
     return originalCloseSocket(s);
 }
 
