@@ -28,6 +28,7 @@ import photon.ds.common;
 import photon.ds.intrusive_queue;
 import photon.windows.support;
 import photon.task;
+import photon.joiners;
 import photon.threadpool;
 import std.file;
 
@@ -327,58 +328,6 @@ struct SchedulerBlock {
     HANDLE iocp; // IO Completion port
 }
 static assert(SchedulerBlock.sizeof == 64);
-
-class FiberJoiners {
-    ThreadInfo tidInfo;
-    bool terminated;
-    Throwable thr;
-    SpinLock joinLock;
-    FiberExt joiners;
-
-    void join() shared {
-        this.unshared.join();
-    }
-
-    void join() {
-        assert(currentFiber);
-        bool suspend = false;
-        joinLock.lock();
-        if (!terminated) {
-            joiners = currentFiber;
-            suspend = true;
-        }
-        joinLock.unlock();
-        if (suspend) yield();
-        if (thr) throw thr;
-    }
-
-    void joinNothrow() nothrow shared {
-        this.unshared.joinNothrow();
-    }
-
-    void joinNothrow() nothrow {
-        assert(currentFiber);
-        bool suspend = false;
-        joinLock.lock();
-        if (!terminated) {
-            joiners = currentFiber;
-            suspend = true;
-        }
-        joinLock.unlock();
-        if (suspend) yield();
-        // skips rethrowing exception
-    }
-
-    void wakeUpJoiners(size_t numSched) {
-        joinLock.lock();
-        terminated = true;
-        FiberExt f = joiners;
-        if (joiners) {
-            joiners.schedule(numSched, WAKE_JOIN);
-        }
-        joinLock.unlock();
-    }
-}
 
 class FiberExt : Fiber { 
     FiberExt next;

@@ -35,5 +35,9 @@ void main() {
             assert(e.msg == "Boom!");
         }
     });
+    auto task3 = go({
+        task1.joinUninterruptible();
+        assert(flag == 1);
+    });
     runScheduler();
 }
