@@ -47,6 +47,7 @@ import photon.ds.common;
 import photon.ds.intrusive_queue;
 import photon.threadpool;
 import photon.task;
+import photon.joiners;
 
 import mecca.time_queue;
 import mecca.containers.lists;
@@ -68,10 +69,7 @@ class FiberExt : Fiber {
     FiberExt next;
     uint numScheduler;
     int wakeFd; // recieves fd that woken us up
-    ThreadInfo tidInfo;
-    SpinLock joinLock;
-    FiberExt joiners;
-    Throwable thr;
+    FiberJoiners joiners;
     struct FlsEntry {
         void* pointer;
         void function(void*) dtor;
@@ -82,11 +80,13 @@ class FiberExt : Fiber {
     this(void function() fn, uint numSched) nothrow {
         super(fn, 2<<20);
         numScheduler = numSched;
+        joiners = new FiberJoiners;
     }
 
     this(void delegate() dg, uint numSched) nothrow {
         super(dg, 2<<20);
         numScheduler = numSched;
+        joiners = new FiberJoiners;
     }
 
     void schedule(size_t nsched, int wakeFd) nothrow
@@ -96,49 +96,6 @@ class FiberExt : Fiber {
         if (nsched != numScheduler) {
             notifyEventloop(numScheduler);
         }
-    }
-
-    void join() shared {
-        this.unshared.join();
-    }
-
-    void join() {
-        assert(currentFiber);
-        bool suspend = false;
-        joinLock.lock();
-        if (state != Fiber.State.TERM) {
-            joiners = currentFiber;
-            suspend = true;
-        }
-        joinLock.unlock();
-        if (suspend) yield();
-        if (thr) throw thr;
-    }
-
-    void joinNothrow() nothrow shared {
-        this.unshared.joinNothrow();
-    }
-
-    void joinNothrow() nothrow {
-        assert(currentFiber);
-        bool suspend = false;
-        joinLock.lock();
-        if (state != Fiber.State.TERM) {
-            joiners = currentFiber;
-            suspend = true;
-        }
-        joinLock.unlock();
-        if (suspend) yield();
-        // skips rethrowing exception
-    }
-
-    void wakeUpJoiners(size_t numSched) {
-        joinLock.lock();
-        FiberExt f = joiners;
-        if (joiners) {
-            joiners.schedule(numSched, WAKE_JOIN);
-        }
-        joinLock.unlock();
     }
 
     static size_t flsAlloc() nothrow {
@@ -304,7 +261,10 @@ package(photon) void schedulerEntry(size_t n)
             }
         }
         logf("Fiber %s terminated", cast(void*)f);
-        f.wakeUpJoiners(n);
+        auto joiners = f.joiners;
+        destroy(f);
+        joiners.wakeUpJoiners(n);
+
     }
 
     shared SchedulerBlock* sched = scheds.ptr + n;
@@ -331,7 +291,7 @@ package(photon) void schedulerEntry(size_t n)
                     }
                 }
                 catch (Exception e) {
-                    f.thr = e;
+                    f.joiners.thr = e;
                     onTermination(f);
                 }
                 catch (Throwable e) {
@@ -371,7 +331,7 @@ public Task go(void delegate() func) nothrow @trusted  {
     logf("Assigned %x -> %d / %d scheduler", cast(void*)f, choice, scheds.length);
     f.schedule(choice, WAKE_TRIGGER);
     notifyEventloop(choice);
-    return Task(f);
+    return Task(f.joiners);
 }
 
 /// Convenience overload for goOnSameThread that accepts functions 
@@ -389,7 +349,7 @@ public Task goOnSameThread(void delegate() func) nothrow @trusted {
     logf("Assigned %x -> %d / %d scheduler", cast(void*)f, choice, scheds.length);
     f.schedule(choice, WAKE_TRIGGER);
     notifyEventloop(choice);
-    return Task(f);
+    return Task(f.joiners);
 }
 
 /// Convenience overload for goOnAllThreads that accepts functions 

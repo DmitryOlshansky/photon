@@ -11,12 +11,12 @@ import std.concurrency;
 */
 struct Task {
 package:
-    shared FiberExt _fiber;
+    shared FiberJoiners _joiners;
     static ThreadInfo s_tidInfo;
 	
-    this(FiberExt fiber)
+    this(FiberJoiners joiners)
 	@trusted nothrow {
-		this._fiber = cast(shared)fiber;
+		this._joiners = cast(shared)joiners;
 	}
 
 public:
@@ -25,29 +25,26 @@ public:
 	//       move constructor
 	this()(Task other)
 	@safe nothrow {
-		_fiber = other._fiber;
+		_joiners = other._joiners;
 	}
 
 	/** Returns the Task instance belonging to the calling task.
 	*/
 	static Task getThis() @safe nothrow
 	{
-		return Task(currentFiber);
+		return Task(currentFiber.joiners);
 	}
 
 	nothrow {
-		package @property FiberExt taskFiber() @system { return cast()_fiber; }
-		@property FiberExt fiber() @system { return cast()this._fiber; }
-
 		/** Determines if the task is still running or scheduled to be run.
 		*/
 		@property bool running()
 		const @trusted {
-			return _fiber.unshared.state != Fiber.State.TERM;
+			return !_joiners.terminated;
 		}
 
-		@property ref ThreadInfo tidInfo() @system { return _fiber ? cast()_fiber.tidInfo : s_tidInfo; } // FIXME: this is not thread safe!
-		@property ref const(ThreadInfo) tidInfo() const @system { return _fiber ? cast()_fiber.tidInfo : s_tidInfo; } // FIXME: this is not thread safe!
+		@property ref ThreadInfo tidInfo() @system { return _joiners ? cast()_joiners.tidInfo : s_tidInfo; } // FIXME: this is not thread safe!
+		@property ref const(ThreadInfo) tidInfo() const @system { return _joiners ? cast()_joiners.tidInfo : s_tidInfo; } // FIXME: this is not thread safe!
 
 		/** Gets the `Tid` associated with this task for use with
 			`std.concurrency`.
@@ -57,23 +54,23 @@ public:
 		@property const(Tid) tid() const @trusted { return tidInfo.ident; }
 	}
 
-	T opCast(T)() const @safe nothrow if (is(T == bool)) { return _fiber !is null; }
-	T opCast(T)() const shared @safe nothrow if (is(T == bool)) { return _fiber !is null; }
+	T opCast(T)() const @safe nothrow if (is(T == bool)) { return _joiners !is null; }
+	T opCast(T)() const shared @safe nothrow if (is(T == bool)) { return _joiners !is null; }
 
-	void join() @trusted { if (_fiber) _fiber.join(); }
-	void joinUninterruptible() @trusted nothrow { if (_fiber) _fiber.joinNothrow(); }
+	void join() @trusted { if (_joiners) _joiners.join(); }
+	void joinUninterruptible() @trusted nothrow { if (_joiners) _joiners.joinNothrow(); }
 	void interrupt() @trusted nothrow { 
         //noop
     }
 
 	bool opEquals(scope ref const(Task) other) const @safe nothrow {
-		return _fiber is other._fiber;
+		return _joiners is other._joiners;
 	}
 	bool opEquals(scope const(Task) other) const @safe nothrow {
-		return _fiber is other._fiber;
+		return _joiners is other._joiners;
 	}
 	bool opEquals(scope shared(const(Task)) other) const shared @safe nothrow {
-		return _fiber is other._fiber;
+		return _joiners is other._joiners;
 	}
 }
 

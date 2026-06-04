@@ -71,6 +71,7 @@ import mecca.containers.lists;
 public import photon.core;
 public import photon.threadpool;
 public import photon.task;
+public import photon.exceptions;
 
 version(PhotonDocs) {
 
