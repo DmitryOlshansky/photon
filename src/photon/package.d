@@ -598,6 +598,10 @@ public:
         buf.close();
     }
 
+    bool closed() shared {
+        return buf_.closed;
+    }
+
     /++
         Part of InputRange contract - checks if there is an item in the queue.
         Returns: `true` if channel is closed and its buffer is exhausted.
@@ -700,8 +704,11 @@ if (
     (Args.length % 2 == 0 && allSatisfy!(isChannel, Even!Args) && allSatisfy!(isHandler, Odd!Args)) ||
     (allSatisfy!(isChannel, Even!(Args[0..$-1])) && allSatisfy!(isHandler, Odd!(Args[0..$-1])) && isHandler!(Args[$-1]))
 ) {
+    import std.random;
     void delegate()[args.length / 2] handlers = void;
     Event*[args.length/2] events = void;
+    size_t[args.length/2] ready;
+    size_t readyCount=0;
     alias paired = args[0 .. args.length - args.length % 2];
     static foreach (i, v; paired) {
         static if(i % 2 == 0) {
@@ -717,8 +724,12 @@ if (
         }
     }
     foreach (i, channel; Even!(paired)) {
-        if (channel.buf.readyToRead())
-            return handlers[i]();
+        if (channel.buf.readyToRead() || channel.buf.closed) {
+            ready[readyCount++] = i;
+        }
+    }
+    if (readyCount > 0) {
+        return handlers[choice(ready[0..readyCount])]();
     }
     static if (args.length % 2) {
         return args[$-1]();
@@ -729,7 +740,7 @@ if (
         switch(n) {
             static foreach (i, channel; Even!(paired)) {
                 case i:
-                    if (channel.buf.readyToRead())
+                    if (channel.buf.readyToRead() || channel.buf.closed)
                         return handlers[n]();
                     break L_dispatch;
             }
