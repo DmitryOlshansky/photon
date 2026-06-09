@@ -12,7 +12,7 @@
 	"name": "channels"
 }
 +/
-module tests.await;
+module examples.await;
 
 import std.stdio, std.datetime;
 import photon;
