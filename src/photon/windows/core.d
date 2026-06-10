@@ -307,8 +307,8 @@ if (allSatisfy!(isAwaitable, Awaitable)) {
     auto box = cast(MultiAwaitBox*)calloc(1, MultiAwaitBox.sizeof);
     box.refCount = args.length;
     box.fiber = cast(shared)currentFiber;
-    foreach (int i, ref v; args) {
-        v.registerForWaitAny(i, box);
+    foreach (i, ref v; args) {
+        v.registerForWaitAny(cast(int)i, box);
     }
     FiberExt.yield();
     return currentFiber.wakeFd;
