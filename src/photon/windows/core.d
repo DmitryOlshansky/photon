@@ -595,8 +595,7 @@ void processEventsEntry(size_t n, Duration wait) {
             auto overlapped = cast(Overlapped*)e.lpOverlapped;
             FiberExt fiber = cast(FiberExt)steal(overlapped.fiber);
             if (fiber !is null) {
-                logf("socket done socket=%d bytes=%d", e.lpCompletionKey, 
-                    cast(int)e.dwNumberOfBytesTransferred);
+                logf("i/o done completionKey=%d bytes=%d", e.lpCompletionKey, e.dwNumberOfBytesTransferred);
                 overlapped.bytes = cast(int)e.dwNumberOfBytesTransferred;
                 fiber.schedule(n, WAKE_TRIGGER);
             }
@@ -765,14 +764,13 @@ public @trusted nothrow {
             }
             overlapped.overlapped.hEvent = ev;
         }
+        if (!WriteFile(h, buf, cast(uint)count, null, cast(OVERLAPPED*)overlapped) && GetLastError() != ERROR_IO_PENDING) {
+            return -1;
+        }
         if (currentFiber) {
-            if (!WriteFileEx(h, buf, cast(uint)count, cast(OVERLAPPED*)overlapped, null)) return -1;
             FiberExt.yield();
             return overlapped.bytes;
         } else {
-            if (!WriteFile(h, buf, cast(uint)count, null, cast(OVERLAPPED*)overlapped) && GetLastError() != ERROR_IO_PENDING) {
-                return -1;
-            }
             WaitForSingleObject(ev, INFINITE);
             return count;
         }
@@ -801,12 +799,11 @@ public @trusted nothrow {
             }
             overlapped.overlapped.hEvent = ev;
         }
+        if (!ReadFile(h, buf, cast(uint)count, null, cast(OVERLAPPED*)overlapped) && GetLastError() != ERROR_IO_PENDING) return -1;
         if (currentFiber) {
-            if (!ReadFileEx(h, buf, cast(uint)count, cast(OVERLAPPED*)overlapped, null)) return -1;
             FiberExt.yield();
             return overlapped.bytes;
         } else {
-            if (!ReadFile(h, buf, cast(uint)count, null, cast(OVERLAPPED*)overlapped) && GetLastError() != ERROR_IO_PENDING) return -1;
             WaitForSingleObject(ev, INFINITE);
             return count;
         }
