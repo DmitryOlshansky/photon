@@ -420,6 +420,9 @@ __gshared Map!(int, FiberExt) fileWaiters = new Map!(int, FiberExt); // mapping 
 __gshared PTP_POOL threadPool; // for synchronious syscalls
 __gshared TP_CALLBACK_ENVIRON_V3 environ; // callback environment for the pool
 __gshared typeof(&closesocket) originalCloseSocket;
+__gshared typeof(&send) originalSend;
+__gshared typeof(&recv) originalRecv;
+__gshared typeof(&accept) originalAccept;
 shared int alive; // count of non-terminated Fibers scheduled
 
 CascadingTimeQueue!(TimedFiber*, TIMER_NUM_BINS, TIMER_NUM_LEVELS, true) timeQueue; // thread-local
@@ -438,6 +441,13 @@ public void initPhoton() @trusted {
     wenforce(hInst, "Failed to upen wsock32.dll");
     originalCloseSocket = cast(typeof(&closesocket))GetProcAddress(hInst, "closesocket");
     wenforce(originalCloseSocket, "failed to lookup closesocket");
+    originalSend = cast(typeof(&send))GetProcAddress(hInst, "send");
+    wenforce(originalSend, "failed to lookup send");
+    originalRecv = cast(typeof(&recv))GetProcAddress(hInst, "recv");
+    wenforce(originalRecv, "failed to lookup recv");
+    originalAccept = cast(typeof(&accept))GetProcAddress(hInst, "accept");
+    wenforce(originalAccept, "failed to lookup accept");
+    
     // TODO: handle NUMA case
     uint threads = info.dwNumberOfProcessors;
     debug(photon_single) {
@@ -586,6 +596,7 @@ package(photon) void schedulerEntry(size_t n)
         }
         processEventsEntry(n, timeQueue.timeTillNextEntry(t));
     }
+    currentFiber = null;
 }
 
 enum int MAX_COMPLETIONS = 500;
@@ -857,6 +868,7 @@ extern(Windows) VOID acceptJob(PTP_CALLBACK_INSTANCE Instance, PVOID Context, PT
 
 extern(Windows) SOCKET accept(SOCKET s, sockaddr* addr, LPINT addrlen) {
     logf("Intercepted accept!");
+    if (currentFiber is null) return originalAccept(s, addr, addrlen);
     AcceptState state;
     state.socket = s;
     state.addr = addr;
@@ -882,6 +894,7 @@ void registerFile(int fd, HANDLE h) {
 }
 
 extern(Windows) int recv(SOCKET s, void* buf, int len, int flags) {
+    if (currentFiber is null) return originalRecv(s, buf, len, flags);
     Overlapped* overlapped = cast(Overlapped*)calloc(1, Overlapped.sizeof);
     scope(exit) free(overlapped);
     overlapped.fiber = cast(shared)currentFiber;
@@ -910,6 +923,7 @@ extern(Windows) int recv(SOCKET s, void* buf, int len, int flags) {
 }
 
 public int recvWithTimeout(SOCKET s, void* buf, int len, int flags, Duration timeout) {
+    assert(currentFiber, "recvWithTimeout is only supported for fibers at the moment");
     if (timeout == Duration.max) return recv(s, buf, len, flags);
     Overlapped* overlapped = cast(Overlapped*)calloc(1, Overlapped.sizeof);
     scope(exit) free(overlapped);
@@ -948,6 +962,7 @@ public int recvWithTimeout(SOCKET s, void* buf, int len, int flags, Duration tim
 }
 
 extern(Windows) int send(SOCKET s, void* buf, int len, int flags) {
+    if (currentFiber is null) return originalSend(s, buf, len, flags);
     Overlapped* overlapped = cast(Overlapped*)calloc(1, Overlapped.sizeof);
     scope(exit) free(overlapped);
     overlapped.fiber = cast(shared)currentFiber;
