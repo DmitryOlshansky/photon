@@ -333,7 +333,6 @@ class FiberExt : Fiber {
     FiberExt next;
     FiberExt back;
     uint numScheduler;
-    int bytesTransfered;
     int wakeFd;
     FiberJoiners joiners;
     struct FlsEntry {
@@ -407,7 +406,7 @@ struct TimedFiber {
 
 struct Overlapped {
     OVERLAPPED overlapped;
-    FiberExt fiber;
+    shared FiberExt fiber;
     int bytes;
 }
 
@@ -593,22 +592,13 @@ void processEventsEntry(size_t n, Duration wait) {
                 notify = true;
                 continue; // user event to wake up event loop
             }
-            FiberExt fiber;
-            if (cast(long)e.lpCompletionKey < 0) {
-                fiber = fileWaiters[cast(int)-cast(long)e.lpCompletionKey];
-            }
-            else {
-                SOCKET sock = cast(SOCKET)e.lpCompletionKey;
-                if (sock !in ioWaiters) {
-                    continue;
-                }
-                auto overlapped = cast(Overlapped*)e.lpOverlapped;
-                logf("socket done socket=%d bytes=%d", e.lpCompletionKey, 
-                    cast(int)e.dwNumberOfBytesTransferred);
+            auto overlapped = cast(Overlapped*)e.lpOverlapped;
+            FiberExt fiber = cast(FiberExt)steal(overlapped.fiber);
+            if (fiber !is null) {
+                logf("i/o done completionKey=%d bytes=%d", e.lpCompletionKey, e.dwNumberOfBytesTransferred);
                 overlapped.bytes = cast(int)e.dwNumberOfBytesTransferred;
-                fiber = overlapped.fiber;
+                fiber.schedule(n, WAKE_TRIGGER);
             }
-            fiber.schedule(n, WAKE_TRIGGER);
         }
         if (count < MAX_COMPLETIONS || notify) break;
     }
@@ -754,9 +744,11 @@ public @trusted nothrow {
     extern(C) ptrdiff_t pwrite(int fd, const(void) *buf, size_t count, ulong offset) {
         static HANDLE ev = INVALID_HANDLE_VALUE;
         auto h = fromFd(fd);
-        OVERLAPPED overlapped;
-        overlapped.Offset = offset & 0xffff_ffff;
-        overlapped.OffsetHigh = offset >> 32;
+        Overlapped* overlapped = cast(Overlapped*)calloc(1, Overlapped.sizeof);
+        scope(exit) free(overlapped);
+        overlapped.overlapped.Offset = offset & 0xffff_ffff;
+        overlapped.overlapped.OffsetHigh = offset >> 32;
+        overlapped.fiber = cast(shared)currentFiber;
         if (currentFiber) {
             if (-fd !in fileWaiters) {
                 try {
@@ -770,16 +762,15 @@ public @trusted nothrow {
             if (ev == INVALID_HANDLE_VALUE) {
                 ev = cast(HANDLE)CreateEventA(null, FALSE, FALSE, null);
             }
-            overlapped.hEvent = ev;
+            overlapped.overlapped.hEvent = ev;
+        }
+        if (!WriteFile(h, buf, cast(uint)count, null, cast(OVERLAPPED*)overlapped) && GetLastError() != ERROR_IO_PENDING) {
+            return -1;
         }
         if (currentFiber) {
-            if (!WriteFileEx(h, buf, cast(uint)count, &overlapped, null)) return -1;
             FiberExt.yield();
-            return currentFiber.bytesTransfered;
+            return overlapped.bytes;
         } else {
-            if (!WriteFile(h, buf, cast(uint)count, null, &overlapped) && GetLastError() != ERROR_IO_PENDING) {
-                return -1;
-            }
             WaitForSingleObject(ev, INFINITE);
             return count;
         }
@@ -788,9 +779,11 @@ public @trusted nothrow {
     extern(C) ptrdiff_t pread(int fd, void *buf, size_t count, ulong offset) {
         static HANDLE ev = INVALID_HANDLE_VALUE;
         auto h = fromFd(fd);
-        OVERLAPPED overlapped;
-        overlapped.Offset = offset & 0xffff_ffff;
-        overlapped.OffsetHigh = offset >> 32;
+        Overlapped* overlapped = cast(Overlapped*)calloc(1, Overlapped.sizeof);
+        scope(exit) free(overlapped);
+        overlapped.overlapped.Offset = offset & 0xffff_ffff;
+        overlapped.overlapped.OffsetHigh = offset >> 32;
+        overlapped.fiber = cast(shared)currentFiber;
         if (currentFiber) {
             if (-fd !in fileWaiters) {
                 try {
@@ -804,14 +797,13 @@ public @trusted nothrow {
             if (ev == INVALID_HANDLE_VALUE) {
                 ev = cast(HANDLE)CreateEventA(null, FALSE, FALSE, null);
             }
-            overlapped.hEvent = ev;
+            overlapped.overlapped.hEvent = ev;
         }
+        if (!ReadFile(h, buf, cast(uint)count, null, cast(OVERLAPPED*)overlapped) && GetLastError() != ERROR_IO_PENDING) return -1;
         if (currentFiber) {
-            if (!ReadFileEx(h, buf, cast(uint)count, &overlapped, null)) return -1;
             FiberExt.yield();
-            return currentFiber.bytesTransfered;
+            return overlapped.bytes;
         } else {
-            if (!ReadFile(h, buf, cast(uint)count, null, &overlapped) && GetLastError() != ERROR_IO_PENDING) return -1;
             WaitForSingleObject(ev, INFINITE);
             return count;
         }
@@ -882,7 +874,7 @@ void registerFile(int fd, HANDLE h) {
 extern(Windows) int recv(SOCKET s, void* buf, int len, int flags) {
     Overlapped* overlapped = cast(Overlapped*)calloc(1, Overlapped.sizeof);
     scope(exit) free(overlapped);
-    overlapped.fiber = currentFiber;
+    overlapped.fiber = cast(shared)currentFiber;
     WSABUF wsabuf = WSABUF(cast(uint)len, buf);
     uint received = 0;
     if (s !in ioWaiters) {
@@ -911,13 +903,12 @@ public int recvWithTimeout(SOCKET s, void* buf, int len, int flags, Duration tim
     if (timeout == Duration.max) return recv(s, buf, len, flags);
     Overlapped* overlapped = cast(Overlapped*)calloc(1, Overlapped.sizeof);
     scope(exit) free(overlapped);
-    overlapped.fiber = currentFiber;
+    overlapped.fiber = cast(shared)currentFiber;
     WSABUF wsabuf = WSABUF(cast(uint)len, buf);
-    FiberExt fiber = currentFiber;
     if (s !in ioWaiters) {
         registerSocket(s);
     }
-    auto entry = timerEntry(&fiber, timeout);
+    auto entry = timerEntry(cast(FiberExt*)&overlapped.fiber, timeout);
     timeQueue.insert(&entry);
     uint received = 0;
     int ret = WSARecv(s, &wsabuf, 1, &received, cast(uint*)&flags, cast(LPWSAOVERLAPPED)overlapped, null);
@@ -949,7 +940,7 @@ public int recvWithTimeout(SOCKET s, void* buf, int len, int flags, Duration tim
 extern(Windows) int send(SOCKET s, void* buf, int len, int flags) {
     Overlapped* overlapped = cast(Overlapped*)calloc(1, Overlapped.sizeof);
     scope(exit) free(overlapped);
-    overlapped.fiber = currentFiber;
+    overlapped.fiber = cast(shared)currentFiber;
     WSABUF wsabuf = WSABUF(cast(uint)len, buf);
     if (s !in ioWaiters) {
         registerSocket(s);
