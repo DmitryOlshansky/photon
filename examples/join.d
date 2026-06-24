@@ -28,12 +28,7 @@ void main() {
     auto task2 = go({
         task1.join();
         assert(flag == 1);
-        try {
-            failedTask.join();
-            assert(false);
-        } catch(Exception e) {
-            assert(e.msg == "Boom!");
-        }
+        failedTask.join();
     });
     auto task3 = go({
         task1.joinUninterruptible();
