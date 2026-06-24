@@ -5,7 +5,6 @@ import photon.core;
 class FiberJoiners {
     ThreadInfo tidInfo;
     bool terminated;
-    Throwable thr;
     SpinLock joinLock;
     FiberExt joiners;
 
@@ -26,7 +25,6 @@ class FiberJoiners {
         }
         joinLock.unlock();
         if (suspend) FiberExt.yield();
-        if (thr) throw thr;
     }
 
     void joinNothrow() nothrow shared {

@@ -48,6 +48,7 @@ import photon.ds.intrusive_queue;
 import photon.threadpool;
 import photon.task;
 import photon.joiners;
+import photon.exceptions;
 
 import mecca.time_queue;
 import mecca.containers.lists;
@@ -291,12 +292,21 @@ package(photon) void schedulerEntry(size_t n)
                     }
                 }
                 catch (Exception e) {
-                    f.joiners.thr = e;
+                    if (errorHandler) {
+                        errorHandler(e, Task(f.joiners));
+                    } else {
+                        stderr.writeln("Unhandled fiber exception: ", e);
+                    }
                     onTermination(f);
                 }
                 catch (Throwable e) {
-                    stderr.writeln(e);
-                    abort();
+                    if (errorHandler) {
+                        errorHandler(e, Task(f.joiners));
+                        onTermination(f);
+                    } else {
+                        stderr.writeln("FATAL fiber error: ", e);
+                        abort();
+                    }
                 }
                 f = next;
             }
