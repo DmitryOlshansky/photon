@@ -313,6 +313,7 @@ package(photon) void schedulerEntry(size_t n)
         }
         processEventsEntry(n, timeQueue.timeTillNextEntry(t));
     }
+    currentFiber = null;
 }
 
 /// Convenience overload for functions
