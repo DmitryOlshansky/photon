@@ -1,3 +1,14 @@
+/+ dub.json:
+    {
+	"authors": [
+		"Dmitry Olshansky"
+	],
+	"copyright": "Copyright © 2024, Dmitry Olshansky",
+	"description": "Echo client - a simple client that sends plain data and recvs echos back",
+	"license": "BOOST",
+	"name": "echo_client"
+}
++/
 // Simple client provided to use with echo_server
 // each line typed is sent to the server, followed by receive to print the response
 module tests.echo_client;
