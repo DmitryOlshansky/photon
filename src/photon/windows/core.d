@@ -415,8 +415,6 @@ shared SchedulerBlock[] scheds;
 
 enum MAX_THREADPOOL_SIZE = 100;
 FiberExt currentFiber;
-__gshared Map!(SOCKET, bool) ioWaiters = new Map!(SOCKET, bool); // mapping of sockets to awaiting fiber
-__gshared Map!(int, FiberExt) fileWaiters = new Map!(int, FiberExt); // mapping of 'fd's to awaiting fiber, actually keyed by -fd to differ from SOCKET-s
 __gshared PTP_POOL threadPool; // for synchronious syscalls
 __gshared TP_CALLBACK_ENVIRON_V3 environ; // callback environment for the pool
 __gshared typeof(&closesocket) originalCloseSocket;
@@ -731,7 +729,14 @@ public @trusted nothrow {
             _errno = cast(int)GetLastError();
             return -1;
         }
-        return getNextFd(file);
+        int fd = getNextFd(file);
+        if (fd != -1 && currentFiber !is null) {
+            if (!registerFile(fd, file)) {
+                close(fd);
+                return -1;
+            }
+        }
+        return fd;
     }
 
     extern(C) int ftruncate(int fd, off_t length) {
@@ -770,16 +775,7 @@ public @trusted nothrow {
         overlapped.overlapped.Offset = offset & 0xffff_ffff;
         overlapped.overlapped.OffsetHigh = offset >> 32;
         overlapped.fiber = cast(shared)currentFiber;
-        if (currentFiber) {
-            if (-fd !in fileWaiters) {
-                try {
-                    registerFile(fd, h);
-                } catch(Exception e) {
-                    assert(false, e.msg);
-                }
-            }
-            fileWaiters[-fd] = currentFiber;
-        } else {
+        if (currentFiber is null) {
             if (ev == INVALID_HANDLE_VALUE) {
                 ev = cast(HANDLE)CreateEventA(null, FALSE, FALSE, null);
             }
@@ -805,16 +801,7 @@ public @trusted nothrow {
         overlapped.overlapped.Offset = offset & 0xffff_ffff;
         overlapped.overlapped.OffsetHigh = offset >> 32;
         overlapped.fiber = cast(shared)currentFiber;
-        if (currentFiber) {
-            if (-fd !in fileWaiters) {
-                try {
-                    registerFile(fd, h);
-                } catch(Exception e) { 
-                    assert(false, e.msg); 
-                }
-            }
-            fileWaiters[-fd] = currentFiber;
-        } else {
+        if (currentFiber is null) {
             if (ev == INVALID_HANDLE_VALUE) {
                 ev = cast(HANDLE)CreateEventA(null, FALSE, FALSE, null);
             }
@@ -831,9 +818,6 @@ public @trusted nothrow {
     }
 
     extern(C) int close(int fd) {
-        try {
-            fileWaiters.remove(-fd);
-        } catch(Exception e) { assert(false, e.msg); }
         if (!CloseHandle(freeFd(fd))) return -1;
         return 0;
     }
@@ -846,6 +830,9 @@ public @trusted nothrow {
 extern(Windows) SOCKET socket(int af, int type, int protocol) {
     logf("Intercepted socket!");
     SOCKET s = cast(SOCKET)WSASocketW(af, type, protocol, null, 0, WSA_FLAG_OVERLAPPED);
+    if (s != INVALID_SOCKET && currentFiber !is null) {
+        registerSocket(s);
+    }
     return s;
 }
 
@@ -879,18 +866,20 @@ extern(Windows) SOCKET accept(SOCKET s, sockaddr* addr, LPINT addrlen) {
     SubmitThreadpoolWork(work);
     FiberExt.yield();
     CloseThreadpoolWork(work);
+    if (state.socket != INVALID_SOCKET) {
+        registerSocket(state.socket);
+    }
     return state.socket;
 }
 
 void registerSocket(SOCKET s) {
-    ioWaiters[s] = true;
     HANDLE port = cast(HANDLE)scheds[currentFiber.numScheduler].iocp;
     wenforce(CreateIoCompletionPort(cast(void*)s, port, cast(size_t)s, 0) == port, "failed to register I/O completion");
 }
 
-void registerFile(int fd, HANDLE h) {
+bool registerFile(int fd, HANDLE h) nothrow {
     HANDLE port = cast(HANDLE)scheds[currentFiber.numScheduler].iocp;
-    wenforce(CreateIoCompletionPort(cast(void*)h, port, cast(size_t)-fd, 0) == port, "failed to register I/O completion");
+    return CreateIoCompletionPort(cast(void*)h, port, cast(size_t)-fd, 0) == port;
 }
 
 extern(Windows) int recv(SOCKET s, void* buf, int len, int flags) {
@@ -900,10 +889,6 @@ extern(Windows) int recv(SOCKET s, void* buf, int len, int flags) {
     overlapped.fiber = cast(shared)currentFiber;
     WSABUF wsabuf = WSABUF(cast(uint)len, buf);
     uint received = 0;
-    if (s !in ioWaiters) {
-        registerSocket(s);
-    }
-    
     int ret = WSARecv(s, &wsabuf, 1, &received, cast(uint*)&flags, cast(LPWSAOVERLAPPED)overlapped, null);
     logf("Got recv %d", ret);
     if (ret >= 0 && received > 0) {
@@ -929,9 +914,6 @@ public int recvWithTimeout(SOCKET s, void* buf, int len, int flags, Duration tim
     scope(exit) free(overlapped);
     overlapped.fiber = cast(shared)currentFiber;
     WSABUF wsabuf = WSABUF(cast(uint)len, buf);
-    if (s !in ioWaiters) {
-        registerSocket(s);
-    }
     auto entry = timerEntry(cast(FiberExt*)&overlapped.fiber, timeout);
     timeQueue.insert(&entry);
     uint received = 0;
@@ -967,9 +949,6 @@ extern(Windows) int send(SOCKET s, void* buf, int len, int flags) {
     scope(exit) free(overlapped);
     overlapped.fiber = cast(shared)currentFiber;
     WSABUF wsabuf = WSABUF(cast(uint)len, buf);
-    if (s !in ioWaiters) {
-        registerSocket(s);
-    }
     uint sent = 0;
     int ret = WSASend(s, &wsabuf, 1, &sent, flags, cast(LPWSAOVERLAPPED)overlapped, null);
     logf("Get send %d", ret);
@@ -990,7 +969,6 @@ extern(Windows) int send(SOCKET s, void* buf, int len, int flags) {
 }
 
 extern(Windows) int closesocket(SOCKET s) {
-    ioWaiters.remove(s);
     return originalCloseSocket(s);
 }
 
