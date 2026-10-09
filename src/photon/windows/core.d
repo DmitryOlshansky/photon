@@ -417,7 +417,6 @@ enum MAX_THREADPOOL_SIZE = 100;
 FiberExt currentFiber;
 __gshared PTP_POOL threadPool; // for synchronious syscalls
 __gshared TP_CALLBACK_ENVIRON_V3 environ; // callback environment for the pool
-__gshared typeof(&closesocket) originalCloseSocket;
 __gshared typeof(&send) originalSend;
 __gshared typeof(&recv) originalRecv;
 __gshared typeof(&accept) originalAccept;
@@ -437,8 +436,6 @@ public void initPhoton() @trusted {
     GetSystemInfo(&info);
     HMODULE hInst = LoadLibraryA("wsock32.dll");
     wenforce(hInst, "Failed to upen wsock32.dll");
-    originalCloseSocket = cast(typeof(&closesocket))GetProcAddress(hInst, "closesocket");
-    wenforce(originalCloseSocket, "failed to lookup closesocket");
     originalSend = cast(typeof(&send))GetProcAddress(hInst, "send");
     wenforce(originalSend, "failed to lookup send");
     originalRecv = cast(typeof(&recv))GetProcAddress(hInst, "recv");
@@ -966,10 +963,6 @@ extern(Windows) int send(SOCKET s, void* buf, int len, int flags) {
         else 
             return ret;
     }
-}
-
-extern(Windows) int closesocket(SOCKET s) {
-    return originalCloseSocket(s);
 }
 
 
