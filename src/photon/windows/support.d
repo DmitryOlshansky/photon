@@ -5,6 +5,8 @@ import core.sys.windows.winsock2;
 import std.format;
 import core.stdc.stdlib;
 
+extern(Windows) void WSASetLastError(int error) nothrow @nogc;
+
 struct WSABUF 
 {
     uint length;

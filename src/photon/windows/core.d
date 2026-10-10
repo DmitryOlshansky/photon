@@ -422,6 +422,7 @@ __gshared TP_CALLBACK_ENVIRON_V3 environ; // callback environment for the pool
 __gshared typeof(&send) originalSend;
 __gshared typeof(&recv) originalRecv;
 __gshared typeof(&accept) originalAccept;
+__gshared typeof(&core.sys.windows.winsock2.select) originalSelect;
 shared int alive; // count of non-terminated Fibers scheduled
 
 CascadingTimeQueue!(TimedFiber*, TIMER_NUM_BINS, TIMER_NUM_LEVELS, true) timeQueue; // thread-local
@@ -436,14 +437,16 @@ public void initPhoton() @trusted {
     if (!cas(&inited, false, true)) return;
     SYSTEM_INFO info;
     GetSystemInfo(&info);
-    HMODULE hInst = LoadLibraryA("wsock32.dll");
-    wenforce(hInst, "Failed to upen wsock32.dll");
+    HMODULE hInst = LoadLibraryA("ws2_32.dll");
+    wenforce(hInst, "Failed to open ws2_32.dll");
     originalSend = cast(typeof(&send))GetProcAddress(hInst, "send");
     wenforce(originalSend, "failed to lookup send");
     originalRecv = cast(typeof(&recv))GetProcAddress(hInst, "recv");
     wenforce(originalRecv, "failed to lookup recv");
     originalAccept = cast(typeof(&accept))GetProcAddress(hInst, "accept");
     wenforce(originalAccept, "failed to lookup accept");
+    originalSelect = cast(typeof(originalSelect))GetProcAddress(hInst, "select");
+    wenforce(originalSelect, "failed to lookup select");
     
     // TODO: handle NUMA case
     uint threads = info.dwNumberOfProcessors;
@@ -463,6 +466,8 @@ public void initPhoton() @trusted {
     InitializeThreadpoolEnvironment(&environ);
     SetThreadpoolCallbackPool(&environ, threadPool);
     initWorkQueues(threads);
+    // Publish socket and loader hooks only after the scheduler is ready.
+    patchPhotonSocketImports();
 }
 
 /// Convenience overload for functions
@@ -823,8 +828,71 @@ public @trusted nothrow {
 
 }
 // ===========================================================================
+/// Installed by initPhoton. May also be called to rescan after loads that bypass
+/// the intercepted LoadLibrary imports. See docs/windows-iat.md.
+public size_t patchPhotonSocketImports() {
+    import photon.windows.iat : IatHook;
+    import photon.windows.iat_loader : installAutomaticIatPatching;
+    enforce(originalSend !is null && originalRecv !is null && originalAccept !is null,
+        "Call initPhoton before patchPhotonSocketImports");
+    // Keep these libraries loaded: saved originals and patched imports depend on them.
+    static __gshared HMODULE[2] providers;
+    immutable names = ["ws2_32.dll", "wsock32.dll"];
+    IatHook[] hooks;
+    foreach (i, name; names) {
+        if (providers[i] is null) {
+            providers[i] = LoadLibraryA(name.ptr);
+            wenforce(providers[i], "Failed to load WinSock provider");
+        }
+        foreach (symbol; AliasSeq!("send", "recv", "accept", "socket", "select")) {
+            auto original = GetProcAddress(providers[i], symbol.ptr);
+            wenforce(original, "Failed to resolve WinSock export");
+            hooks ~= IatHook(cast(void*)original, cast(void*)&mixin(symbol));
+        }
+    }
+    // In particular, do not redirect legacy WinSock's own calls back into Photon.
+    return installAutomaticIatPatching(hooks, providers[]);
+}
+
 // INTERCEPTS
 // ===========================================================================
+
+private struct SelectState {
+    int nfds;
+    fd_set* readSet;
+    fd_set* writeSet;
+    fd_set* errorSet;
+    const(core.sys.windows.winsock2.timeval)* timeout;
+    FiberExt fiber;
+    int result;
+    int error;
+}
+
+private extern(Windows) void selectJob(PTP_CALLBACK_INSTANCE instance, void* context, PTP_WORK work) {
+    auto state = cast(SelectState*)context;
+    state.result = originalSelect(state.nfds, state.readSet, state.writeSet, state.errorSet, state.timeout);
+    state.error = WSAGetLastError();
+    state.fiber.schedule(size_t.max, WAKE_TRIGGER);
+}
+
+// Curl waits for nonblocking sockets in select, not necessarily in recv/send.
+// Use the Windows pool so readiness waits do not occupy scheduler threads.
+// This is a compatibility bridge: one pool worker per pending select.
+extern(Windows) int select(int nfds, fd_set* readSet, fd_set* writeSet, fd_set* errorSet, const(core.sys.windows.winsock2.timeval)* timeout) {
+    if (currentFiber is null || (timeout && timeout.tv_sec == 0 && timeout.tv_usec == 0))
+        return originalSelect(nfds, readSet, writeSet, errorSet, timeout);
+    SelectState state = SelectState(nfds, readSet, writeSet, errorSet, timeout, currentFiber);
+    auto work = CreateThreadpoolWork(&selectJob, &state, &environ);
+    if (!work) {
+        WSASetLastError(WSAENOBUFS);
+        return SOCKET_ERROR;
+    }
+    SubmitThreadpoolWork(work);
+    FiberExt.yield();
+    CloseThreadpoolWork(work);
+    if (state.result == SOCKET_ERROR) WSASetLastError(state.error);
+    return state.result;
+}
 
 extern(Windows) SOCKET socket(int af, int type, int protocol) {
     logf("Intercepted socket!");
