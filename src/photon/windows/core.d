@@ -33,6 +33,8 @@ import photon.exceptions;
 import photon.threadpool;
 import std.file;
 
+pragma(lib, "ws2_32");
+
 shared struct RawEvent {
 nothrow:
     this(bool signaled) {
