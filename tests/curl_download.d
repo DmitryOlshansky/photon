@@ -7,6 +7,9 @@
 	"dependencies": {
 		"photon": { "path": ".." }
 	},
+	"debugVersions": [
+		"photon_single"
+	],
 	"description": "Curl download - a simple example of using std.net.curl with Photon",
 	"license": "BOOST",
 	"name": "curl_download"
