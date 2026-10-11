@@ -10,4 +10,7 @@ else version(VisionOS) version = Darwin;
 version(linux) public import photon.reactor;
 else version(FreeBSD) public import photon.freebsd.core;
 else version(Darwin) public import photon.reactor;
-else version(Windows) public import photon.windows.core;
+else version(Windows) {
+    public import photon.windows.core;
+    public import photon.windows.fast_sockets;
+}
